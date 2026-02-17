@@ -13,14 +13,13 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   // Untuk debugging
   console.log("AdminRoute - isAuthenticated:", isAuthenticated);
   console.log("AdminRoute - isAdmin:", isAdmin);
-  console.log("AdminRoute - userRole:", authService.getUserRole());
 
   // Kalau tidak login, redirect ke login admin
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // Kalau bukan admin, redirect ke home
+  // Kalau bukan admin, redirect ke home (bukan ke customer)
   if (!isAdmin) {
     return <Navigate to="/" replace />;
   }

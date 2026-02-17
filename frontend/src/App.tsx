@@ -10,7 +10,7 @@ import { Toaster } from "react-hot-toast";
 
 // Layout
 import MainLayout from "./components/layout/MainLayout";
-import AdminLayout from "./components/layout/AdminLayout";
+// import AdminLayout from './components/layout/AdminLayout'; // COMMENT DULU
 
 // Public Pages
 import Home from "./pages/public/Home";
@@ -24,23 +24,21 @@ import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import CustomerLogin from "./pages/auth/CustomerLogin";
 
-// Customer Pages
-import CustomerProfile from "./pages/customer/Profile";
-import CustomerAddresses from "./pages/customer/Addresses";
-import CustomerTransactions from "./pages/customer/Transactions";
+// COMMENT SEMUA IMPORT CUSTOMER & ADMIN PAGES
+// import CustomerProfile from './pages/customer/Profile';
+// import CustomerAddresses from './pages/customer/Addresses';
+// import CustomerTransactions from './pages/customer/Transactions';
+// import AdminDashboard from './pages/admin/Dashboard';
+// import AdminPos from './pages/admin/Pos';
+// import AdminProducts from './pages/admin/Products';
+// import AdminCategories from './pages/admin/Categories';
+// import AdminInventory from './pages/admin/Inventory';
+// import AdminReports from './pages/admin/Reports';
+// import AdminStaff from './pages/admin/Staff';
 
-// Admin Pages
-import AdminDashboard from "./pages/admin/Dashboard";
-import AdminPos from "./pages/admin/Pos";
-import AdminProducts from "./pages/admin/Products";
-import AdminCategories from "./pages/admin/Categories";
-import AdminInventory from "./pages/admin/Inventory";
-import AdminReports from "./pages/admin/Reports";
-import AdminStaff from "./pages/admin/Staff";
-
-// Protected Route Components
-import PrivateRoute from "./components/auth/PrivateRoute";
-import AdminRoute from "./components/auth/AdminRoute";
+// COMMENT SEMUA PROTECTED ROUTE COMPONENTS
+// import CustomerRoute from './components/auth/CustomerRoute';
+// import AdminRoute from './components/auth/AdminRoute';
 
 const queryClient = new QueryClient();
 
@@ -49,7 +47,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <Routes>
-          {/* PUBLIC ROUTES - Bisa diakses tanpa login */}
+          {/* ========== PUBLIC ROUTES ONLY ========== */}
+          {/* HANYA ROUTES PUBLIC YANG AKTIF */}
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Home />} />
             <Route path="products" element={<Products />} />
@@ -58,44 +57,12 @@ function App() {
             <Route path="checkout" element={<Checkout />} />
           </Route>
 
-          {/* Auth Routes - Juga public */}
+          {/* Auth Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route path="/register" element={<Register />} />
 
-          {/* Customer Routes - Harus login sebagai customer */}
-          <Route
-            path="/customer"
-            element={
-              <PrivateRoute>
-                <MainLayout />
-              </PrivateRoute>
-            }
-          >
-            <Route path="profile" element={<CustomerProfile />} />
-            <Route path="addresses" element={<CustomerAddresses />} />
-            <Route path="transactions" element={<CustomerTransactions />} />
-          </Route>
-
-          {/* Admin Routes - Harus login sebagai admin/staff */}
-          <Route
-            path="/admin"
-            element={
-              <AdminRoute>
-                <AdminLayout />
-              </AdminRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-            <Route path="pos" element={<AdminPos />} />
-            <Route path="products" element={<AdminProducts />} />
-            <Route path="categories" element={<AdminCategories />} />
-            <Route path="inventory" element={<AdminInventory />} />
-            <Route path="reports" element={<AdminReports />} />
-            <Route path="staff" element={<AdminStaff />} />
-          </Route>
-
-          {/* Fallback - Redirect ke home */}
+          {/* SEMUA ROUTES LAIN DI-NONAKTIFKAN */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

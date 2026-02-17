@@ -74,11 +74,6 @@ export const authService = {
     return hasAdminToken || hasCustomerToken;
   },
 
-  // Get role
-  getUserRole: () => {
-    return localStorage.getItem("userRole");
-  },
-
   // Check if admin
   isAdmin: () => {
     const role = localStorage.getItem("userRole");
@@ -91,5 +86,10 @@ export const authService = {
       !!localStorage.getItem("customerToken") &&
       !localStorage.getItem("userRole")
     );
+  },
+
+  // Get role
+  getUserRole: () => {
+    return localStorage.getItem("userRole");
   },
 };
