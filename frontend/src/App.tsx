@@ -18,6 +18,7 @@ import Products from "./pages/public/Products";
 import ProductDetail from "./pages/public/ProductDetail";
 import Cart from "./pages/public/Cart";
 import Checkout from "./pages/public/Checkout";
+import OrderSuccess from './pages/public/OrderSuccess';
 
 // Auth Pages
 import Login from "./pages/auth/Login";
@@ -55,6 +56,7 @@ function App() {
             <Route path="products/:id" element={<ProductDetail />} />
             <Route path="cart" element={<Cart />} />
             <Route path="checkout" element={<Checkout />} />
+            <Route path="order-success/:invoiceNumber" element={<OrderSuccess />} />
           </Route>
 
           {/* Auth Routes */}

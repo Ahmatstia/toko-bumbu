@@ -26,8 +26,9 @@ interface Stock {
   sellingPrice: number;
 }
 
+// Perbaiki type ini - tambah displayPrice
 interface ProductWithPrice extends Product {
-  price: number;
+  displayPrice: number;  // <-- TAMBAHKAN INI
   stockQuantity: number;
 }
 
@@ -45,6 +46,24 @@ interface ProductsResponse {
     totalPages: number;
   };
 }
+
+// Format price dengan safe check
+const formatPrice = (price: any): string => {
+  if (price === undefined || price === null) return 'Rp 0';
+  
+  let numericPrice: number;
+  if (typeof price === 'string') {
+    numericPrice = parseFloat(price);
+  } else if (typeof price === 'number') {
+    numericPrice = price;
+  } else {
+    return 'Rp 0';
+  }
+  
+  if (isNaN(numericPrice) || numericPrice === 0) return 'Rp 0';
+  
+  return `Rp ${numericPrice.toLocaleString('id-ID')}`;
+};
 
 const Products: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,14 +126,14 @@ const Products: React.FC = () => {
 
           productsWithStock.push({
             ...product,
-            price: Number(price),
+            displayPrice: Number(price),  // <-- PASTIKAN INI
             stockQuantity: totalStock
           });
         } catch (error) {
           console.error(`Error fetching stock for ${product.name}:`, error);
           productsWithStock.push({
             ...product,
-            price: 0,
+            displayPrice: 0,  // <-- PASTIKAN INI
             stockQuantity: 0
           });
         }
@@ -156,10 +175,13 @@ const Products: React.FC = () => {
       return;
     }
 
+    // Gunakan displayPrice sesuai dengan type
+    const price = typeof product.displayPrice === 'number' ? product.displayPrice : 0;
+
     addToCart({
       productId: product.id,
       name: product.name,
-      price: product.price,
+      price: price,
       quantity: 1,
       imageUrl: product.imageUrl || undefined,
     });
@@ -167,12 +189,6 @@ const Products: React.FC = () => {
     toast.success(`${product.name} ditambahkan ke keranjang`, {
       icon: '🛒',
     });
-  };
-
-  // Format price
-  const formatPrice = (price: number) => {
-    if (!price || price === 0) return 'Rp 0';
-    return `Rp ${price.toLocaleString('id-ID')}`;
   };
 
   // Clear filters
@@ -342,7 +358,7 @@ const Products: React.FC = () => {
                 <div className="flex items-center justify-between mt-4">
                   <div>
                     <span className="text-2xl font-bold text-primary-600">
-                      {formatPrice(product.price)}
+                      {formatPrice(product.displayPrice)}
                     </span>
                     {product.stockQuantity > 0 && product.stockQuantity < 10 && (
                       <p className="text-xs text-orange-500 mt-1">
