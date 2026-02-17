@@ -59,20 +59,37 @@ export const authService = {
 
   // Get current user
   getCurrentUser: () => {
-    const userData = localStorage.getItem("userData");
-    return userData ? JSON.parse(userData) : null;
+    try {
+      const userData = localStorage.getItem("userData");
+      return userData ? JSON.parse(userData) : null;
+    } catch {
+      return null;
+    }
   },
 
   // Check if logged in
   isAuthenticated: () => {
-    return (
-      !!localStorage.getItem("adminToken") ||
-      !!localStorage.getItem("customerToken")
-    );
+    const hasAdminToken = !!localStorage.getItem("adminToken");
+    const hasCustomerToken = !!localStorage.getItem("customerToken");
+    return hasAdminToken || hasCustomerToken;
   },
 
   // Get role
   getUserRole: () => {
     return localStorage.getItem("userRole");
+  },
+
+  // Check if admin
+  isAdmin: () => {
+    const role = localStorage.getItem("userRole");
+    return role && ["OWNER", "MANAGER", "CASHIER", "STAFF"].includes(role);
+  },
+
+  // Check if customer
+  isCustomer: () => {
+    return (
+      !!localStorage.getItem("customerToken") &&
+      !localStorage.getItem("userRole")
+    );
   },
 };

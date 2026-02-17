@@ -49,7 +49,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <Routes>
-          {/* Public Routes */}
+          {/* PUBLIC ROUTES - Bisa diakses tanpa login */}
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Home />} />
             <Route path="products" element={<Products />} />
@@ -58,12 +58,12 @@ function App() {
             <Route path="checkout" element={<Checkout />} />
           </Route>
 
-          {/* Auth Routes */}
+          {/* Auth Routes - Juga public */}
           <Route path="/login" element={<Login />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route path="/register" element={<Register />} />
 
-          {/* Customer Routes (Protected) */}
+          {/* Customer Routes - Harus login sebagai customer */}
           <Route
             path="/customer"
             element={
@@ -77,7 +77,7 @@ function App() {
             <Route path="transactions" element={<CustomerTransactions />} />
           </Route>
 
-          {/* Admin Routes (Protected with Role) */}
+          {/* Admin Routes - Harus login sebagai admin/staff */}
           <Route
             path="/admin"
             element={
@@ -95,8 +95,8 @@ function App() {
             <Route path="staff" element={<AdminStaff />} />
           </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" />} />
+          {/* Fallback - Redirect ke home */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
       <Toaster position="top-right" />

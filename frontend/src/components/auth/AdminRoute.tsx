@@ -8,13 +8,20 @@ interface AdminRouteProps {
 
 const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
-  const role = authService.getUserRole();
+  const isAdmin = authService.isAdmin();
 
+  // Untuk debugging
+  console.log("AdminRoute - isAuthenticated:", isAuthenticated);
+  console.log("AdminRoute - isAdmin:", isAdmin);
+  console.log("AdminRoute - userRole:", authService.getUserRole());
+
+  // Kalau tidak login, redirect ke login admin
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!role || !["OWNER", "MANAGER", "CASHIER", "STAFF"].includes(role)) {
+  // Kalau bukan admin, redirect ke home
+  if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
 

@@ -17,7 +17,7 @@ interface CartStore {
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   getTotal: () => number;
-  getItemCount: () => number;
+  getItemCount: () => number; // <- ini function, bukan number
 }
 
 export const useCartStore = create<CartStore>()(
@@ -73,7 +73,7 @@ export const useCartStore = create<CartStore>()(
       },
     }),
     {
-      name: "cart-storage", // nama di localStorage
+      name: "cart-storage",
     },
   ),
 );
