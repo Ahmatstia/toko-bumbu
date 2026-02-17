@@ -34,11 +34,7 @@ export class CustomersService {
   async getTransactions(customerId: string) {
     const customer = await this.customerRepository.findOne({
       where: { id: customerId },
-      relations: [
-        'transactions',
-        'transactions.items',
-        'transactions.items.product',
-      ],
+      relations: ['transactions', 'transactions.items', 'transactions.items.product'],
     });
 
     if (!customer) {
@@ -60,10 +56,7 @@ export class CustomersService {
 
     // If this is default address, remove default from others
     if (createAddressDto.isDefault) {
-      await this.addressRepository.update(
-        { customerId, isDefault: true },
-        { isDefault: false },
-      );
+      await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
     }
 
     const address = this.addressRepository.create({
@@ -81,11 +74,7 @@ export class CustomersService {
     });
   }
 
-  async updateAddress(
-    customerId: string,
-    addressId: string,
-    updateDto: Partial<CreateAddressDto>,
-  ) {
+  async updateAddress(customerId: string, addressId: string, updateDto: Partial<CreateAddressDto>) {
     const address = await this.addressRepository.findOne({
       where: { id: addressId, customerId },
     });
@@ -96,10 +85,7 @@ export class CustomersService {
 
     // If setting as default, remove default from others
     if (updateDto.isDefault) {
-      await this.addressRepository.update(
-        { customerId, isDefault: true },
-        { isDefault: false },
-      );
+      await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
     }
 
     Object.assign(address, updateDto);
@@ -121,16 +107,10 @@ export class CustomersService {
 
   async setDefaultAddress(customerId: string, addressId: string) {
     // Remove default from all
-    await this.addressRepository.update(
-      { customerId, isDefault: true },
-      { isDefault: false },
-    );
+    await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
 
     // Set new default
-    await this.addressRepository.update(
-      { id: addressId, customerId },
-      { isDefault: true },
-    );
+    await this.addressRepository.update({ id: addressId, customerId }, { isDefault: true });
 
     return { message: 'Default address updated' };
   }

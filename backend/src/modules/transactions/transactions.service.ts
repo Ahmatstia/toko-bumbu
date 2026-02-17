@@ -1,15 +1,7 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import {
-  Transaction,
-  TransactionStatus,
-  PaymentMethod,
-} from './entities/transaction.entity';
+import { Transaction, TransactionStatus, PaymentMethod } from './entities/transaction.entity';
 import { TransactionItem } from './entities/transaction-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { Stock } from '../inventory/entities/stock.entity';
@@ -53,9 +45,7 @@ export class TransactionsService {
 
     let sequence = 1;
     if (lastTransaction) {
-      const lastSeq = parseInt(
-        lastTransaction.invoiceNumber.split('-').pop() || '0',
-      );
+      const lastSeq = parseInt(lastTransaction.invoiceNumber.split('-').pop() || '0');
       sequence = lastSeq + 1;
     }
 
@@ -85,9 +75,7 @@ export class TransactionsService {
       });
 
       if (!product) {
-        throw new NotFoundException(
-          `Product ${item.productId} tidak ditemukan`,
-        );
+        throw new NotFoundException(`Product ${item.productId} tidak ditemukan`);
       }
 
       // Cari stok yang available (FIFO: yang expired duluan)
@@ -239,11 +227,9 @@ export class TransactionsService {
       await queryRunner.commitTransaction();
 
       // Catat ke inventory service di background
-      this.recordInventoryLog(
-        validatedItems,
-        invoiceNumber,
-        savedTransaction.id,
-      ).catch(console.error);
+      this.recordInventoryLog(validatedItems, invoiceNumber, savedTransaction.id).catch(
+        console.error,
+      );
 
       return this.findOne(savedTransaction.id);
     } catch (error) {
@@ -411,9 +397,7 @@ export class TransactionsService {
     const transaction = await this.findOne(id);
 
     if (transaction.status !== TransactionStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Hanya transaksi COMPLETED yang bisa dibatalkan',
-      );
+      throw new BadRequestException('Hanya transaksi COMPLETED yang bisa dibatalkan');
     }
 
     // Gunakan transaction database

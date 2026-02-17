@@ -1,12 +1,4 @@
-import {
-  IsEnum,
-  IsNumber,
-  IsString,
-  IsOptional,
-  IsUUID,
-  Min,
-  IsDateString,
-} from 'class-validator';
+import { IsEnum, IsNumber, IsString, IsOptional, IsUUID, Min, IsDateString } from 'class-validator';
 import { InventoryType } from '../entities/inventory.entity';
 import { Type } from 'class-transformer';
 

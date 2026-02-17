@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -68,10 +64,7 @@ export class CustomerAuthService {
   }
 
   async login(loginDto: LoginCustomerDto) {
-    const customer = await this.validateCustomer(
-      loginDto.email,
-      loginDto.password,
-    );
+    const customer = await this.validateCustomer(loginDto.email, loginDto.password);
 
     if (!customer) {
       throw new UnauthorizedException('Invalid email or password');

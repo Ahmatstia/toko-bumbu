@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  Get,
-  Request,
-  Patch,
-} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Request, Patch } from '@nestjs/common';
 import { CustomerAuthService } from './customer-auth.service';
 import { RegisterCustomerDto } from '../dto/register-customer.dto';
 import { LoginCustomerDto } from '../dto/login-customer.dto';

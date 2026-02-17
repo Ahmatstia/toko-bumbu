@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -58,9 +54,7 @@ export class AuthService {
   async register(registerDto: RegisterDto, creatorRole: UserRole) {
     // Validasi: hanya OWNER dan MANAGER yang bisa bikin user baru
     if (creatorRole !== UserRole.OWNER && creatorRole !== UserRole.MANAGER) {
-      throw new UnauthorizedException(
-        'Anda tidak punya akses untuk membuat user baru',
-      );
+      throw new UnauthorizedException('Anda tidak punya akses untuk membuat user baru');
     }
 
     // Cek username sudah ada

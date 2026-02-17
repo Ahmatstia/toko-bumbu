@@ -47,11 +47,7 @@ export class CustomersController {
     @Param('addressId') addressId: string,
     @Body() updateDto: Partial<CreateAddressDto>,
   ) {
-    return this.customersService.updateAddress(
-      req.user.id,
-      addressId,
-      updateDto,
-    );
+    return this.customersService.updateAddress(req.user.id, addressId, updateDto);
   }
 
   @Delete('addresses/:addressId')
@@ -60,10 +56,7 @@ export class CustomersController {
   }
 
   @Post('addresses/:addressId/default')
-  async setDefaultAddress(
-    @Request() req,
-    @Param('addressId') addressId: string,
-  ) {
+  async setDefaultAddress(@Request() req, @Param('addressId') addressId: string) {
     return this.customersService.setDefaultAddress(req.user.id, addressId);
   }
 }

@@ -17,10 +17,7 @@ import { CustomerJwtGuard } from '../customers/auth/guards/customer-jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
-import {
-  TransactionStatus,
-  PaymentMethod,
-} from './entities/transaction.entity';
+import { TransactionStatus, PaymentMethod } from './entities/transaction.entity';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -30,10 +27,7 @@ export class TransactionsController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async create(
-    @Request() req,
-    @Body() createTransactionDto: CreateTransactionDto,
-  ) {
+  async create(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
     const userId = req.user?.id;
     return this.transactionsService.create(createTransactionDto, userId);
   }
@@ -41,10 +35,7 @@ export class TransactionsController {
   // Endpoint untuk CUSTOMER yang login
   @Post('customer')
   @UseGuards(CustomerJwtGuard)
-  async createAsCustomer(
-    @Request() req,
-    @Body() createTransactionDto: CreateTransactionDto,
-  ) {
+  async createAsCustomer(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
     // Set customer info dari token
     createTransactionDto.customerId = req.user.id; // <-- PASTIKAN INI ADA
     createTransactionDto.customerName = req.user.name;

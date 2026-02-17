@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Product } from './entities/product.entity';
@@ -81,12 +77,7 @@ export class ProductsService {
     return await this.productRepository.save(product);
   }
 
-  async findAll(
-    categoryId?: string,
-    search?: string,
-    page: number = 1,
-    limit: number = 10,
-  ) {
+  async findAll(categoryId?: string, search?: string, page: number = 1, limit: number = 10) {
     const query = this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category');
@@ -137,10 +128,7 @@ export class ProductsService {
 
     // Kalau ganti category, validasi
     // Perbaikan: cek dulu apakah categoryId ada di DTO
-    if (
-      updateProductDto.categoryId &&
-      updateProductDto.categoryId !== product.categoryId
-    ) {
+    if (updateProductDto.categoryId && updateProductDto.categoryId !== product.categoryId) {
       const category = await this.categoryRepository.findOne({
         where: { id: updateProductDto.categoryId },
       });

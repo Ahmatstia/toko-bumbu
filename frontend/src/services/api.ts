@@ -32,12 +32,31 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Hanya redirect ke login jika:
+    // 1. Error 401 (Unauthorized)
+    // 2. BUKAN request ke public endpoints
+    // 3. Ada token yang expired (berarti sebelumnya login)
     if (error.response?.status === 401) {
-      // Token expired atau invalid
-      localStorage.removeItem("adminToken");
-      localStorage.removeItem("customerToken");
-      localStorage.removeItem("userRole");
-      window.location.href = "/login";
+      const isPublicEndpoint = 
+        error.config.url.includes('/products') || 
+        error.config.url.includes('/categories') ||
+        error.config.url.includes('/customer/auth/login') ||
+        error.config.url.includes('/auth/login') ||
+        error.config.url.includes('/register');
+      
+      const hadToken = 
+        localStorage.getItem("adminToken") || 
+        localStorage.getItem("customerToken");
+
+      // Only redirect if:
+      // - It's not a public endpoint
+      // - AND we had a token (meaning user was logged in)
+      if (!isPublicEndpoint && hadToken) {
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("customerToken");
+        localStorage.removeItem("userRole");
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   },
