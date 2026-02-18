@@ -6,7 +6,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { InventoryType } from './entities/inventory.entity';
-import { Public } from '../../common/decorators/public.decorator'; // <-- IMPORT
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('inventory')
 export class InventoryController {
@@ -30,12 +30,13 @@ export class InventoryController {
   }
 
   @Get('stock')
-  @Public() // <-- TAMBAHKAN INI - PUBLIC!
+  @Public()
   async getStock(
     @Query('productId') productId?: string,
     @Query('batchCode') batchCode?: string,
+    @Query('search') search?: string, // <-- TAMBAHKAN PARAMETER SEARCH
   ) {
-    return this.inventoryService.getStock(productId, batchCode);
+    return this.inventoryService.getStock(productId, batchCode, search);
   }
 
   @Get('stock/low')
@@ -43,6 +44,20 @@ export class InventoryController {
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
   async getLowStock(@Query('threshold') threshold?: string) {
     return this.inventoryService.getLowStock(threshold ? parseInt(threshold) : 5);
+  }
+
+  @Get('stock/expiring')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  async getExpiringSoon(@Query('days') days?: string) {
+    return this.inventoryService.getExpiringSoon(days ? parseInt(days) : 30);
+  }
+
+  @Post('check-expired')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async checkExpired() {
+    return this.inventoryService.checkExpiredProducts();
   }
 
   @Get('history')

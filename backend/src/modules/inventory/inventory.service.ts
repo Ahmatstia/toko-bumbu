@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThan, MoreThan } from 'typeorm';
+import { Repository, DataSource, LessThan, MoreThan, Like } from 'typeorm';
 import { Inventory, InventoryType } from './entities/inventory.entity';
 import { Stock } from './entities/stock.entity';
 import { Product } from '../products/entities/product.entity';
@@ -31,7 +31,6 @@ export class InventoryService {
       referenceId,
     } = createInventoryDto;
 
-    // Validasi product
     const product = await this.productRepository.findOne({
       where: { id: productId },
     });
@@ -40,7 +39,6 @@ export class InventoryService {
       throw new NotFoundException('Product not found');
     }
 
-    // Gunakan transaction biar aman
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -49,21 +47,16 @@ export class InventoryService {
       // Cari stock existing
       let stock: Stock | null = null;
 
+      const whereCondition: any = { productId };
       if (batchCode) {
-        stock = await queryRunner.manager.findOne(Stock, {
-          where: {
-            productId,
-            batchCode,
-          },
-        });
+        whereCondition.batchCode = batchCode;
       } else {
-        stock = await queryRunner.manager.findOne(Stock, {
-          where: {
-            productId,
-            batchCode: null as any,
-          },
-        });
+        whereCondition.batchCode = null;
       }
+
+      stock = await queryRunner.manager.findOne(Stock, {
+        where: whereCondition,
+      });
 
       const stockBefore = stock?.quantity || 0;
       let stockAfter: number;
@@ -81,7 +74,7 @@ export class InventoryService {
       } else if (type === InventoryType.ADJUSTMENT) {
         stockAfter = quantity;
       } else if (type === InventoryType.EXPIRED) {
-        stockAfter = 0;
+        stockAfter = 0; // Stok expired jadi 0
       } else {
         throw new BadRequestException('Tipe inventory tidak valid');
       }
@@ -95,7 +88,6 @@ export class InventoryService {
         if (batchCode) stock.batchCode = batchCode;
         await queryRunner.manager.save(stock);
       } else {
-        // Create new stock
         const newStock = new Stock();
         newStock.productId = productId;
         newStock.quantity = stockAfter;
@@ -111,7 +103,8 @@ export class InventoryService {
       const inventory = new Inventory();
       inventory.productId = productId;
       inventory.type = type;
-      inventory.quantity = type === InventoryType.OUT ? -quantity : quantity;
+      inventory.quantity =
+        type === InventoryType.OUT || type === InventoryType.EXPIRED ? -quantity : quantity;
       inventory.stockBefore = stockBefore;
       inventory.stockAfter = stockAfter;
       inventory.batchCode = batchCode || null;
@@ -124,7 +117,6 @@ export class InventoryService {
 
       await queryRunner.manager.save(inventory);
 
-      // Commit transaction
       await queryRunner.commitTransaction();
 
       return {
@@ -134,16 +126,81 @@ export class InventoryService {
         message: 'Stok berhasil diupdate',
       };
     } catch (error) {
-      // Rollback kalau error
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
-      // Release query runner
       await queryRunner.release();
     }
   }
 
-  async getStock(productId?: string, batchCode?: string) {
+  // CEK DAN PROSES STOK EXPIRED - FIXED
+  async checkExpiredProducts() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    console.log('🔍 Mencari stok expired sebelum:', today.toISOString());
+
+    const expiredStocks = await this.stockRepository.find({
+      where: {
+        expiryDate: LessThan(today),
+        quantity: MoreThan(0),
+      },
+      relations: ['product'],
+    });
+
+    console.log(`📊 Ditemukan ${expiredStocks.length} stok expired`);
+
+    // Definisikan tipe untuk result
+    type ExpiredResult = {
+      product: Product;
+      stock: Stock;
+      inventory: Inventory;
+      message: string;
+    };
+
+    const results: ExpiredResult[] = [];
+
+    // Proses satu per satu dengan delay untuk menghindari deadlock
+    for (const stock of expiredStocks) {
+      try {
+        console.log(`⚙️ Memproses expired: ${stock.product?.name} - ${stock.quantity} unit`);
+
+        // FIX: Tambahkan userId 'system' untuk identifikasi
+        const result = await this.addStock(
+          {
+            productId: stock.productId,
+            type: InventoryType.EXPIRED,
+            quantity: stock.quantity,
+            batchCode: stock.batchCode || undefined,
+            notes: `Auto expired - ${today.toISOString().split('T')[0]}`,
+          },
+          'system', // <-- TAMBAHKAN USER ID
+        );
+
+        results.push(result as ExpiredResult);
+
+        // Delay kecil untuk menghindari deadlock
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error(`❌ Gagal memproses expired stock ${stock.id}:`, error);
+      }
+    }
+
+    return {
+      processed: results.length,
+      total: expiredStocks.length,
+      results,
+      message: `${results.length} dari ${expiredStocks.length} stok expired telah diproses`,
+    };
+  }
+
+  // Auto-cancel expired transactions (panggil via cron job)
+  async autoCancelExpiredTransactions() {
+    return this.checkExpiredProducts();
+  }
+
+  // FIXED: Tambahkan parameter search
+  async getStock(productId?: string, batchCode?: string, search?: string) {
     const query = this.stockRepository
       .createQueryBuilder('stock')
       .leftJoinAndSelect('stock.product', 'product');
@@ -154,6 +211,11 @@ export class InventoryService {
 
     if (batchCode) {
       query.andWhere('stock.batchCode = :batchCode', { batchCode });
+    }
+
+    // TAMBAHKAN PENCARIAN BERDASARKAN NAMA PRODUK
+    if (search) {
+      query.andWhere('product.name LIKE :search', { search: `%${search}%` });
     }
 
     const stocks = await query
@@ -237,58 +299,5 @@ export class InventoryService {
       .getMany();
 
     return stocks;
-  }
-
-  async checkExpiredProducts() {
-    const today = new Date();
-
-    const expiredStocks = await this.stockRepository.find({
-      where: {
-        expiryDate: LessThan(today),
-        quantity: MoreThan(0),
-      },
-      relations: ['product'],
-    });
-
-    // Definisikan tipe untuk result
-    type ExpiredResult = {
-      product: Product;
-      stock: Stock;
-      inventory: Inventory;
-      message: string;
-    };
-
-    const results: ExpiredResult[] = [];
-    const errors: any[] = [];
-
-    for (const stock of expiredStocks) {
-      try {
-        const result = await this.addStock({
-          productId: stock.productId,
-          type: InventoryType.EXPIRED,
-          quantity: stock.quantity,
-          batchCode: stock.batchCode || undefined,
-          notes: `Auto expired - ${today.toISOString().split('T')[0]}`,
-        });
-
-        // Type assertion karena kita tahu strukturnya
-        results.push(result as ExpiredResult);
-      } catch (error) {
-        console.error(`Failed to process expired stock ${stock.id}:`, error);
-        errors.push({
-          stockId: stock.id,
-          productId: stock.productId,
-          error: error.message,
-        });
-      }
-    }
-
-    return {
-      processed: results.length,
-      failed: errors.length,
-      total: expiredStocks.length,
-      results,
-      errors,
-    };
   }
 }

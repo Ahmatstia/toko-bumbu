@@ -46,22 +46,10 @@ export class Inventory {
   @Column({ name: 'stock_after', type: 'int', default: 0 })
   stockAfter: number;
 
-  @Column({
-    name: 'purchase_price',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
+  @Column({ name: 'purchase_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
   purchasePrice: number | null;
 
-  @Column({
-    name: 'selling_price',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
+  @Column({ name: 'selling_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
   sellingPrice: number | null;
 
   @Column({ name: 'batch_code', nullable: true, type: 'varchar', length: 100 })
@@ -80,12 +68,7 @@ export class Inventory {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
-  @Column({
-    name: 'reference_id',
-    nullable: true,
-    type: 'varchar',
-    length: 255,
-  }) // <-- PERBAIKAN INI
+  @Column({ name: 'reference_id', nullable: true, type: 'varchar', length: 255 }) // <-- TAMBAHKAN TYPE
   referenceId: string | null;
 
   @CreateDateColumn({ name: 'created_at' })

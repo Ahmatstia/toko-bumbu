@@ -12,15 +12,16 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CustomersModule } from './modules/customers/customers.module';
 
+// Cron Jobs
+import { TransactionCron } from './modules/transactions/cron/transaction.cron';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
-
     ScheduleModule.forRoot(),
-
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -31,21 +32,22 @@ import { CustomersModule } from './modules/customers/customers.module';
         password: configService.get('DB_PASSWORD', ''),
         database: configService.get('DB_DATABASE', 'bumbuku_db'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false, // <-- SET KE FALSE!
-        logging: true,
+        synchronize: false, // <-- MATIKAN PERMANEN!
+        migrations: ['dist/migrations/*.js'],
+        logging: configService.get('NODE_ENV') === 'development',
         charset: 'utf8mb4',
         timezone: '+07:00',
       }),
       inject: [ConfigService],
     }),
-
     UsersModule,
     AuthModule,
     CategoriesModule,
     ProductsModule,
-    InventoryModule,
+    InventoryModule, // <-- PASTIKAN INI ADA
     TransactionsModule,
     CustomersModule,
   ],
+  providers: [TransactionCron],
 })
 export class AppModule {}

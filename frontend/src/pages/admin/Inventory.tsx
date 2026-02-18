@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PlusIcon,
@@ -6,6 +6,7 @@ import {
   ClockIcon,
   MagnifyingGlassIcon,
   ExclamationTriangleIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import toast from "react-hot-toast";
@@ -33,6 +34,7 @@ interface StockItem {
 
 const Inventory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showLowStock, setShowLowStock] = useState(false);
   const [showExpiring, setShowExpiring] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<StockItem | null>(
@@ -44,37 +46,75 @@ const Inventory: React.FC = () => {
 
   const queryClient = useQueryClient();
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   // Fetch all stock
-  const { data: stockData, isLoading } = useQuery({
-    queryKey: ["inventory", searchTerm, showLowStock, showExpiring],
+  const {
+    data: stockData,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["inventory", debouncedSearch, showLowStock, showExpiring],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (searchTerm) params.append("search", searchTerm);
+      if (debouncedSearch) params.append("search", debouncedSearch);
 
       const response = await api.get(`/inventory/stock?${params.toString()}`);
       let stocks = response.data.stocks || [];
 
-      // Filter low stock
+      // Filter low stock (client-side)
       if (showLowStock) {
         stocks = stocks.filter(
           (s: StockItem) => s.quantity > 0 && s.quantity <= s.product.minStock,
         );
       }
 
-      // Filter expiring (30 hari)
+      // Filter expiring (client-side)
       if (showExpiring) {
         const thirtyDaysFromNow = new Date();
         thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
         stocks = stocks.filter((s: StockItem) => {
           if (!s.expiryDate) return false;
           const expiry = new Date(s.expiryDate);
-          return expiry <= thirtyDaysFromNow;
+          return expiry <= thirtyDaysFromNow && s.quantity > 0;
         });
       }
 
       return stocks;
     },
   });
+
+  // Manual check expired mutation
+  const checkExpiredMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post("/inventory/check-expired");
+      return response.data;
+    },
+    onSuccess: (data) => {
+      // Refetch data setelah proses expired selesai
+      refetch();
+      toast.success(`${data.processed} stok expired telah diproses`);
+    },
+    onError: (error: any) => {
+      console.error("Check expired error:", error);
+      toast.error(
+        error.response?.data?.message || "Gagal memproses stok expired",
+      );
+    },
+  });
+
+  // Handle check expired dengan konfirmasi
+  const handleCheckExpired = () => {
+    if (window.confirm("Yakin ingin memeriksa dan memproses stok expired?")) {
+      checkExpiredMutation.mutate();
+    }
+  };
 
   // Format price
   const formatPrice = (price: number) => {
@@ -99,8 +139,9 @@ const Inventory: React.FC = () => {
   };
 
   // Check expiry status
-  const getExpiryStatus = (date: string | null) => {
+  const getExpiryStatus = (date: string | null, quantity: number) => {
     if (!date) return null;
+    if (quantity === 0) return null;
 
     const today = new Date();
     const expiry = new Date(date);
@@ -109,7 +150,7 @@ const Inventory: React.FC = () => {
     );
 
     if (daysLeft < 0) {
-      return { label: "Expired", color: "bg-red-100 text-red-600" };
+      return { label: "EXPIRED", color: "bg-red-100 text-red-600" };
     }
     if (daysLeft <= 30) {
       return {
@@ -118,6 +159,43 @@ const Inventory: React.FC = () => {
       };
     }
     return null;
+  };
+
+  // Hitung stok aman
+  const countSafeStock = (stocks: StockItem[]) => {
+    return stocks.filter((s: StockItem) => s.quantity > s.product.minStock)
+      .length;
+  };
+
+  // Hitung stok menipis
+  const countLowStock = (stocks: StockItem[]) => {
+    return stocks.filter(
+      (s: StockItem) => s.quantity > 0 && s.quantity <= s.product.minStock,
+    ).length;
+  };
+
+  // Hitung akan expired
+  const countExpiringSoon = (stocks: StockItem[]) => {
+    return stocks.filter((s: StockItem) => {
+      if (!s.expiryDate || s.quantity === 0) return false;
+      const daysLeft = Math.ceil(
+        (new Date(s.expiryDate).getTime() - new Date().getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+      return daysLeft <= 30 && daysLeft > 0;
+    }).length;
+  };
+
+  // Hitung expired
+  const countExpired = (stocks: StockItem[]) => {
+    return stocks.filter((s: StockItem) => {
+      if (!s.expiryDate || s.quantity === 0) return false;
+      const daysLeft = Math.ceil(
+        (new Date(s.expiryDate).getTime() - new Date().getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+      return daysLeft < 0;
+    }).length;
   };
 
   const stocks = stockData || [];
@@ -139,6 +217,36 @@ const Inventory: React.FC = () => {
           <p className="text-gray-600 mt-1">Kelola stok barang dan batch</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleCheckExpired}
+            disabled={checkExpiredMutation.isPending}
+            className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+          >
+            <ClockIcon className="h-5 w-5" />
+            {checkExpiredMutation.isPending ? (
+              <>
+                <svg className="animate-spin h-4 w-4 mr-1" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Memproses...
+              </>
+            ) : (
+              "Cek Expired"
+            )}
+          </button>
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
@@ -193,6 +301,7 @@ const Inventory: React.FC = () => {
             <button
               onClick={() => {
                 setSearchTerm("");
+                setDebouncedSearch("");
                 setShowLowStock(false);
                 setShowExpiring(false);
               }}
@@ -201,6 +310,61 @@ const Inventory: React.FC = () => {
               <ArrowPathIcon className="h-5 w-5" />
               Reset Filter
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Warning Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+              <span className="text-green-600 font-bold">
+                {countSafeStock(stocks)}
+              </span>
+            </div>
+            <div>
+              <p className="font-semibold text-green-800">Stok Aman</p>
+              <p className="text-sm text-green-600">Normal</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+              <span className="text-yellow-600 font-bold">
+                {countLowStock(stocks)}
+              </span>
+            </div>
+            <div>
+              <p className="font-semibold text-yellow-800">Stok Menipis</p>
+              <p className="text-sm text-yellow-600">Perlu restock</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <ClockIcon className="h-6 w-6 text-orange-600" />
+            <div>
+              <p className="font-semibold text-orange-800">Akan Expired</p>
+              <p className="text-sm text-orange-600">
+                {countExpiringSoon(stocks)} produk
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+            <div>
+              <p className="font-semibold text-red-800">Stok Expired</p>
+              <p className="text-sm text-red-600">
+                {countExpired(stocks)} produk
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -221,7 +385,7 @@ const Inventory: React.FC = () => {
                   Stok
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Status
+                  Status Stok
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
                   Harga Beli
@@ -233,6 +397,9 @@ const Inventory: React.FC = () => {
                   Expiry Date
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
+                  Status Expiry
+                </th>
+                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
                   Aksi
                 </th>
               </tr>
@@ -240,14 +407,17 @@ const Inventory: React.FC = () => {
             <tbody>
               {stocks.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-gray-500">
+                  <td colSpan={9} className="text-center py-8 text-gray-500">
                     Tidak ada data stok
                   </td>
                 </tr>
               ) : (
                 stocks.map((stock: StockItem) => {
-                  const status = getStockStatus(stock);
-                  const expiryStatus = getExpiryStatus(stock.expiryDate);
+                  const stockStatus = getStockStatus(stock);
+                  const expiryStatus = getExpiryStatus(
+                    stock.expiryDate,
+                    stock.quantity,
+                  );
 
                   return (
                     <tr
@@ -270,9 +440,9 @@ const Inventory: React.FC = () => {
                       </td>
                       <td className="py-4 px-6">
                         <span
-                          className={`px-2 py-1 rounded text-xs ${status.color}`}
+                          className={`px-2 py-1 rounded text-xs ${stockStatus.color}`}
                         >
-                          {status.label}
+                          {stockStatus.label}
                         </span>
                       </td>
                       <td className="py-4 px-6">
@@ -282,16 +452,29 @@ const Inventory: React.FC = () => {
                         {formatPrice(stock.sellingPrice)}
                       </td>
                       <td className="py-4 px-6">
-                        <div className="flex items-center gap-2">
-                          <span>{formatDate(stock.expiryDate)}</span>
-                          {expiryStatus && (
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${expiryStatus.color}`}
-                            >
-                              {expiryStatus.label}
+                        <span
+                          className={
+                            stock.quantity === 0 ? "text-gray-400" : ""
+                          }
+                        >
+                          {formatDate(stock.expiryDate)}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6">
+                        {expiryStatus && (
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-semibold ${expiryStatus.color}`}
+                          >
+                            {expiryStatus.label}
+                          </span>
+                        )}
+                        {!expiryStatus &&
+                          stock.expiryDate &&
+                          stock.quantity > 0 && (
+                            <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-600">
+                              Aman
                             </span>
                           )}
-                        </div>
                       </td>
                       <td className="py-4 px-6">
                         <div className="flex gap-2">
@@ -300,7 +483,8 @@ const Inventory: React.FC = () => {
                               setSelectedProduct(stock);
                               setShowAdjustModal(true);
                             }}
-                            className="text-blue-600 hover:text-blue-700"
+                            disabled={stock.quantity === 0}
+                            className={`text-blue-600 hover:text-blue-700 ${stock.quantity === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                             title="Adjust Stok"
                           >
                             <ArrowPathIcon className="h-5 w-5" />
@@ -313,7 +497,7 @@ const Inventory: React.FC = () => {
                             className="text-gray-600 hover:text-gray-700"
                             title="History"
                           >
-                            <ClockIcon className="h-5 w-5" />
+                            <DocumentTextIcon className="h-5 w-5" />
                           </button>
                         </div>
                       </td>
@@ -326,69 +510,12 @@ const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* Warning Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <ExclamationTriangleIcon className="h-6 w-6 text-yellow-600" />
-            <div>
-              <p className="font-semibold text-yellow-800">Stok Menipis</p>
-              <p className="text-sm text-yellow-600">
-                {
-                  stocks.filter(
-                    (s: StockItem) =>
-                      s.quantity > 0 && s.quantity <= s.product.minStock,
-                  ).length
-                }{" "}
-                produk
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <ClockIcon className="h-6 w-6 text-orange-600" />
-            <div>
-              <p className="font-semibold text-orange-800">Akan Expired</p>
-              <p className="text-sm text-orange-600">
-                {
-                  stocks.filter((s: StockItem) => {
-                    if (!s.expiryDate) return false;
-                    const daysLeft = Math.ceil(
-                      (new Date(s.expiryDate).getTime() -
-                        new Date().getTime()) /
-                        (1000 * 60 * 60 * 24),
-                    );
-                    return daysLeft <= 30 && daysLeft > 0;
-                  }).length
-                }{" "}
-                produk
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
-            <div>
-              <p className="font-semibold text-red-800">Stok Habis</p>
-              <p className="text-sm text-red-600">
-                {stocks.filter((s: StockItem) => s.quantity === 0).length}{" "}
-                produk
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Modals */}
       {showAddModal && (
         <AddStockModal
           onClose={() => setShowAddModal(false)}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["inventory"] });
+            refetch();
             setShowAddModal(false);
           }}
         />
@@ -402,7 +529,7 @@ const Inventory: React.FC = () => {
             setShowAdjustModal(false);
           }}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["inventory"] });
+            refetch();
             setSelectedProduct(null);
             setShowAdjustModal(false);
           }}

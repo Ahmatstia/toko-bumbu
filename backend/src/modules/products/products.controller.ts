@@ -29,6 +29,7 @@ export class ProductsController {
     return this.productsService.create(createProductDto);
   }
 
+  // ENDPOINT UNTUK PUBLIC (hanya produk aktif)
   @Get('public')
   @Public()
   async findAllPublic(
@@ -45,22 +46,7 @@ export class ProductsController {
     );
   }
 
-  @Get('public')
-  @Public()
-  async findAllPublic(
-    @Query('categoryId') categoryId?: string,
-    @Query('search') search?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.productsService.findAllPublic(
-      categoryId,
-      search,
-      page ? parseInt(page) : 1,
-      limit ? parseInt(limit) : 12,
-    );
-  }
-
+  // ENDPOINT UNTUK ADMIN (bisa filter isActive)
   @Get()
   @Public()
   async findAll(
@@ -85,7 +71,7 @@ export class ProductsController {
     );
   }
 
-  // ENDPOINT BARU: Untuk dropdown (ambil semua produk)
+  // ENDPOINT UNTUK DROPDOWN (semua produk)
   @Get('all/dropdown')
   @Public()
   async findAllForDropdown() {

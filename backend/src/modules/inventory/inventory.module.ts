@@ -5,7 +5,7 @@ import { InventoryController } from './inventory.controller';
 import { Inventory } from './entities/inventory.entity';
 import { Stock } from './entities/stock.entity';
 import { Product } from '../products/entities/product.entity';
-import { UsersModule } from '../users/users.module'; // Import UsersModule
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
