@@ -51,6 +51,13 @@ export class TransactionsController {
     return this.transactionsService.create(createTransactionDto, undefined);
   }
 
+  // ========== ENDPOINT CEK KETERSEDIAAN STOK ==========
+  @Get('availability/:productId')
+  @Public()
+  async checkAvailability(@Param('productId') productId: string) {
+    return this.transactionsService.checkAvailability(productId);
+  }
+
   // ========== PUBLIC CHECK STATUS ==========
   @Get('status/:invoiceNumber')
   @Public()
@@ -62,6 +69,7 @@ export class TransactionsController {
       total: transaction.total,
       paymentMethod: transaction.paymentMethod,
       createdAt: transaction.createdAt,
+      expiresAt: transaction.expiresAt,
     };
   }
 
@@ -73,6 +81,20 @@ export class TransactionsController {
   }
 
   // ========== ADMIN ENDPOINTS ==========
+  @Post(':id/confirm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async confirmPayment(@Param('id') id: string, @Request() req) {
+    return this.transactionsService.confirmPayment(id, req.user.id);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async cancelTransaction(@Param('id') id: string, @Body('reason') reason: string) {
+    return this.transactionsService.cancelTransaction(id, reason);
+  }
+
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)
@@ -122,5 +144,13 @@ export class TransactionsController {
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async findOne(@Param('id') id: string) {
     return this.transactionsService.findOne(id);
+  }
+
+  // ========== CRON JOB (panggil manual) ==========
+  @Post('cron/expired')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER)
+  async processExpired() {
+    return this.transactionsService.processExpiredReservations();
   }
 }

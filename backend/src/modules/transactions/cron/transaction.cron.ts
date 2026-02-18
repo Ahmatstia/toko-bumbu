@@ -1,21 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { InventoryService } from '../../inventory/inventory.service';
+import { TransactionsService } from '../transactions.service';
 
 @Injectable()
 export class TransactionCron {
   private readonly logger = new Logger(TransactionCron.name);
 
-  constructor(private inventoryService: InventoryService) {}
+  constructor(private transactionsService: TransactionsService) {}
 
   // Jalankan setiap jam 1 pagi
   @Cron('0 1 * * *')
-  async handleExpiredStocks() {
-    this.logger.log('Menjalankan cron: auto-cancel expired stocks');
+  async handleExpiredReservations() {
+    this.logger.log('Menjalankan cron: process expired reservations');
 
     try {
-      const result = await this.inventoryService.checkExpiredProducts();
-      this.logger.log(`${result.processed} stok expired telah diproses`);
+      const result = await this.transactionsService.processExpiredReservations();
+      this.logger.log(`${result.processed} reservasi expired telah diproses`);
     } catch (error) {
       this.logger.error('Gagal menjalankan cron:', error);
     }

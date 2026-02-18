@@ -11,17 +11,19 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { TransactionItem } from './transaction-item.entity';
 import { Customer } from '../../customers/entities/customer.entity';
+import { Reservation } from './reservation.entity';
 
 export enum PaymentMethod {
   CASH = 'CASH',
-  TRANSFER = 'TRANSFER', // Untuk pembayaran via WhatsApp (Transfer/QRIS)
+  TRANSFER = 'TRANSFER',
 }
 
 export enum TransactionStatus {
-  PENDING = 'PENDING', // Menunggu konfirmasi via WA
-  PROCESSING = 'PROCESSING', // Sedang diproses
-  COMPLETED = 'COMPLETED', // Selesai
-  CANCELLED = 'CANCELLED', // Dibatalkan
+  PENDING = 'PENDING', // Menunggu pembayaran (stok di-HOLD)
+  PROCESSING = 'PROCESSING', // Sedang diproses (stok masih HOLD)
+  COMPLETED = 'COMPLETED', // Selesai (stok berkurang)
+  CANCELLED = 'CANCELLED', // Dibatalkan (stok kembali)
+  EXPIRED = 'EXPIRED', // Kadaluarsa (stok kembali)
 }
 
 @Entity('transactions')
@@ -90,8 +92,14 @@ export class Transaction {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ name: 'expires_at', nullable: true, type: 'datetime' })
+  expiresAt: Date | null; // Batas waktu pembayaran (24 jam)
+
   @OneToMany(() => TransactionItem, (item) => item.transaction, { cascade: true })
   items: TransactionItem[];
+
+  @OneToMany(() => Reservation, (reservation) => reservation.transaction)
+  reservations: Reservation[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

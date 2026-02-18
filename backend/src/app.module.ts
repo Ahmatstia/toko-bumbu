@@ -12,6 +12,18 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CustomersModule } from './modules/customers/customers.module';
 
+// Entities (untuk TypeORM)
+import { User } from './modules/users/entities/user.entity';
+import { Category } from './modules/categories/entities/category.entity';
+import { Product } from './modules/products/entities/product.entity';
+import { Stock } from './modules/inventory/entities/stock.entity';
+import { Inventory } from './modules/inventory/entities/inventory.entity';
+import { Transaction } from './modules/transactions/entities/transaction.entity';
+import { TransactionItem } from './modules/transactions/entities/transaction-item.entity';
+import { Reservation } from './modules/transactions/entities/reservation.entity';
+import { Customer } from './modules/customers/entities/customer.entity';
+import { CustomerAddress } from './modules/customers/entities/customer-address.entity';
+
 // Cron Jobs
 import { TransactionCron } from './modules/transactions/cron/transaction.cron';
 
@@ -31,9 +43,19 @@ import { TransactionCron } from './modules/transactions/cron/transaction.cron';
         username: configService.get('DB_USERNAME', 'root'),
         password: configService.get('DB_PASSWORD', ''),
         database: configService.get('DB_DATABASE', 'bumbuku_db'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false, // <-- MATIKAN PERMANEN!
-        migrations: ['dist/migrations/*.js'],
+        entities: [
+          User,
+          Category,
+          Product,
+          Stock,
+          Inventory,
+          Transaction,
+          TransactionItem,
+          Reservation, // <-- PASTIKAN INI ADA
+          Customer,
+          CustomerAddress,
+        ],
+        synchronize: false,
         logging: configService.get('NODE_ENV') === 'development',
         charset: 'utf8mb4',
         timezone: '+07:00',
@@ -44,7 +66,7 @@ import { TransactionCron } from './modules/transactions/cron/transaction.cron';
     AuthModule,
     CategoriesModule,
     ProductsModule,
-    InventoryModule, // <-- PASTIKAN INI ADA
+    InventoryModule,
     TransactionsModule,
     CustomersModule,
   ],
