@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
-import { Public } from '../../common/decorators/public.decorator'; // <-- IMPORT INI
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -29,24 +29,71 @@ export class ProductsController {
     return this.productsService.create(createProductDto);
   }
 
-  @Get()
-  @Public() // <-- TAMBAHKAN INI - PUBLIC!
-  findAll(
+  @Get('public')
+  @Public()
+  async findAllPublic(
     @Query('categoryId') categoryId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    return this.productsService.findAllPublic(
+      categoryId,
+      search,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 12,
+    );
+  }
+
+  @Get('public')
+  @Public()
+  async findAllPublic(
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.productsService.findAllPublic(
+      categoryId,
+      search,
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 12,
+    );
+  }
+
+  @Get()
+  @Public()
+  async findAll(
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('isActive') isActive?: string,
+    @Query('isPublic') isPublic?: string,
+  ) {
+    const isActiveBool = isActive === 'true' ? true : isActive === 'false' ? false : undefined;
+
+    const isPublicBool = isPublic === 'true';
+
     return this.productsService.findAll(
       categoryId,
       search,
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 10,
+      isActiveBool,
+      isPublicBool,
     );
   }
 
+  // ENDPOINT BARU: Untuk dropdown (ambil semua produk)
+  @Get('all/dropdown')
+  @Public()
+  async findAllForDropdown() {
+    return this.productsService.findAllForDropdown();
+  }
+
   @Get(':id')
-  @Public() // <-- TAMBAHKAN INI - PUBLIC!
+  @Public()
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
   }

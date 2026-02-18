@@ -30,10 +30,11 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
 
   // Fetch products
   const { data: products, isLoading: productsLoading } = useQuery<Product[]>({
-    queryKey: ["products-for-stock"],
+    queryKey: ["products-dropdown"],
     queryFn: async () => {
-      const response = await api.get("/products?limit=100");
-      return response.data.data;
+      // GUNAKAN ENDPOINT BARU
+      const response = await api.get("/products/all/dropdown");
+      return response.data;
     },
   });
 

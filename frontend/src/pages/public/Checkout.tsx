@@ -4,9 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeftIcon,
   CheckCircleIcon,
+  CreditCardIcon,
   BanknotesIcon,
-  PhoneIcon,
+  QrCodeIcon,
+  ClockIcon,
   ChatBubbleLeftRightIcon,
+  PhoneIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import { useCartStore } from "../../store/cartStore";
@@ -14,7 +17,7 @@ import { authService } from "../../services/auth.service";
 import toast from "react-hot-toast";
 
 // Nomor WhatsApp Admin (ganti dengan nomor toko)
-const ADMIN_WHATSAPP = "6282371663414"; // Format internasional tanpa +
+const ADMIN_WHATSAPP = "6282371663414";
 
 interface Address {
   id: string;
@@ -43,12 +46,16 @@ const Checkout: React.FC = () => {
   const [showWAPrompt, setShowWAPrompt] = useState(false);
   const [createdTransaction, setCreatedTransaction] = useState<any>(null);
 
-  // Form state untuk guest
+  // Form state untuk guest (LENGKAP)
   const [guestForm, setGuestForm] = useState({
     name: "",
     phone: "",
     email: "",
     address: "",
+    province: "",
+    city: "",
+    district: "",
+    postalCode: "",
   });
 
   // Fetch addresses untuk customer yang login
@@ -87,15 +94,18 @@ const Checkout: React.FC = () => {
 
   // Handle guest form change
   const handleGuestFormChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
   ) => {
+    const { name, value } = e.target;
     setGuestForm({
       ...guestForm,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
   };
 
-  // Validate guest form
+  // Validate guest form (LENGKAP)
   const validateGuestForm = () => {
     if (!guestForm.name.trim()) {
       toast.error("Nama harus diisi");
@@ -109,10 +119,27 @@ const Checkout: React.FC = () => {
       toast.error("Alamat harus diisi");
       return false;
     }
+    if (!guestForm.province.trim()) {
+      toast.error("Provinsi harus diisi");
+      return false;
+    }
+    if (!guestForm.city.trim()) {
+      toast.error("Kota harus diisi");
+      return false;
+    }
+    if (!guestForm.district.trim()) {
+      toast.error("Kecamatan harus diisi");
+      return false;
+    }
     return true;
   };
 
-  // Generate WhatsApp message
+  // Generate alamat lengkap untuk guest
+  const getGuestFullAddress = () => {
+    return `${guestForm.address}, ${guestForm.district}, ${guestForm.city}, ${guestForm.province} ${guestForm.postalCode}`.trim();
+  };
+
+  // Generate WhatsApp message (LENGKAP DENGAN ALAMAT)
   const generateWAMessage = (transaction: any) => {
     // Data customer
     let customerInfo = "";
@@ -122,7 +149,7 @@ const Checkout: React.FC = () => {
       customerInfo = `Nama: ${guestForm.name}
 No HP: ${guestForm.phone}
 Email: ${guestForm.email || "-"}`;
-      customerAddress = guestForm.address;
+      customerAddress = getGuestFullAddress();
     } else {
       // Untuk customer login, ambil alamat yang dipilih
       const selectedAddr = addresses?.find(
@@ -147,6 +174,10 @@ ${selectedAddr.province} ${selectedAddr.postalCode || ""}`.trim();
           `- ${item.name} ${item.quantity} x ${formatPrice(item.price)} = ${formatPrice(item.price * item.quantity)}`,
       )
       .join("\n");
+
+    const subtotal = getTotal();
+    const shippingCost = 5000;
+    const total = subtotal + shippingCost;
 
     const message = `*PESANAN BARU* 🛒
 ────────────────
@@ -210,27 +241,29 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
           quantity: item.quantity,
         })),
         paymentMethod: paymentMethod,
-        paymentAmount: total,
+        paymentAmount: getTotal(),
         discount: 0,
       };
 
-      // Tambah data customer
+      // Tambah data customer dengan alamat LENGKAP
       if (isGuest) {
         transactionData.isGuest = true;
         transactionData.customerName = guestForm.name;
         transactionData.customerPhone = guestForm.phone;
-        transactionData.notes = guestForm.address;
+        transactionData.notes = getGuestFullAddress();
       } else {
         transactionData.isGuest = false;
         transactionData.customerId = user?.id;
         transactionData.customerName = user?.name;
         transactionData.customerPhone = user?.phone;
 
+        // Ambil alamat yang dipilih
         const selectedAddr = addresses?.find(
           (addr) => addr.id === selectedAddress,
         );
         if (selectedAddr) {
-          transactionData.notes = `${selectedAddr.address}, ${selectedAddr.city}, ${selectedAddr.province} ${selectedAddr.postalCode}`;
+          transactionData.notes =
+            `${selectedAddr.address}, ${selectedAddr.district ? selectedAddr.district + ", " : ""}${selectedAddr.city}, ${selectedAddr.province} ${selectedAddr.postalCode}`.trim();
         }
       }
 
@@ -316,11 +349,9 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl p-4 mb-4">
+              <div className="bg-white rounded-xl p-4 mb-4 max-h-64 overflow-y-auto">
                 <p className="text-sm text-gray-700 whitespace-pre-line">
-                  {generateWAMessage(createdTransaction)
-                    .replace(/%0A/g, "\n")
-                    .replace(/%20/g, " ")}
+                  {decodeURIComponent(generateWAMessage(createdTransaction))}
                 </p>
               </div>
 
@@ -411,41 +442,45 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
             </div>
           )}
 
-          {/* Guest Form */}
+          {/* Guest Form - LENGKAP DENGAN ALAMAT */}
           {isGuest && (
             <div className="bg-white rounded-2xl shadow-sm p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">
-                Data Diri
+                Data Diri & Alamat Pengiriman
               </h2>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nama Lengkap <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={guestForm.name}
-                    onChange={handleGuestFormChange}
-                    placeholder="Contoh: Budi Santoso"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
-                  />
+                {/* Data Diri */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nama Lengkap <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={guestForm.name}
+                      onChange={handleGuestFormChange}
+                      placeholder="Contoh: Budi Santoso"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      No HP <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={guestForm.phone}
+                      onChange={handleGuestFormChange}
+                      placeholder="Contoh: 08123456789"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    No HP <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={guestForm.phone}
-                    onChange={handleGuestFormChange}
-                    placeholder="Contoh: 08123456789"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
-                  />
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email (Opsional)
@@ -456,28 +491,99 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
                     value={guestForm.email}
                     onChange={handleGuestFormChange}
                     placeholder="Contoh: budi@email.com"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Alamat Lengkap <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="address"
-                    value={guestForm.address}
-                    onChange={handleGuestFormChange}
-                    rows={4}
-                    placeholder="Contoh: Jl. Merdeka No. 123, RT 01 RW 02, Kel. Gambir, Kec. Gambir, Jakarta Pusat"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
-                  />
+
+                {/* Alamat Lengkap */}
+                <div className="border-t border-gray-200 pt-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">
+                    Alamat Pengiriman
+                  </h3>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Alamat Jalan <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        name="address"
+                        value={guestForm.address}
+                        onChange={handleGuestFormChange}
+                        rows={2}
+                        placeholder="Contoh: Jl. Merdeka No. 123, RT 01 RW 02"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Provinsi <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="province"
+                          value={guestForm.province}
+                          onChange={handleGuestFormChange}
+                          placeholder="Contoh: DKI Jakarta"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Kota/Kabupaten <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="city"
+                          value={guestForm.city}
+                          onChange={handleGuestFormChange}
+                          placeholder="Contoh: Jakarta Pusat"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Kecamatan <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="district"
+                          value={guestForm.district}
+                          onChange={handleGuestFormChange}
+                          placeholder="Contoh: Gambir"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Kode Pos
+                        </label>
+                        <input
+                          type="text"
+                          name="postalCode"
+                          value={guestForm.postalCode}
+                          onChange={handleGuestFormChange}
+                          placeholder="Contoh: 10110"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Address Selection untuk Customer */}
+          {/* Address Selection untuk Customer - SUDAH LENGKAP */}
           {isAuthenticated && isCustomer && (
             <div className="bg-white rounded-2xl shadow-sm p-6">
               <div className="flex justify-between items-center mb-4">
@@ -530,6 +636,7 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
                             {addr.address}
                           </p>
                           <p className="text-sm text-gray-500">
+                            {addr.district && `${addr.district}, `}
                             {addr.city}, {addr.province} {addr.postalCode}
                           </p>
                         </div>
@@ -576,9 +683,9 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
                 />
                 <BanknotesIcon className="h-6 w-6 text-gray-600 mr-3" />
                 <div>
-                  <span className="font-semibold">Tunai</span>
+                  <span className="font-semibold">Tunai (Bayar di Toko)</span>
                   <p className="text-sm text-gray-500">
-                    Bayar langsung di toko
+                    Bayar langsung saat ambil barang
                   </p>
                 </div>
               </label>
@@ -602,7 +709,7 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
                 <div>
                   <span className="font-semibold">Transfer Bank / QRIS</span>
                   <p className="text-sm text-gray-500">
-                    Konfirmasi via WhatsApp
+                    Konfirmasi pembayaran via WhatsApp
                   </p>
                 </div>
               </label>

@@ -77,7 +77,14 @@ export class ProductsService {
     return await this.productRepository.save(product);
   }
 
-  async findAll(categoryId?: string, search?: string, page: number = 1, limit: number = 10) {
+  async findAll(
+    categoryId?: string,
+    search?: string,
+    page: number = 1,
+    limit: number = 10,
+    isActive?: boolean,
+    isPublic: boolean = false, // Parameter untuk membedakan public/admin
+  ) {
     const query = this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category');
@@ -91,6 +98,15 @@ export class ProductsService {
         '(product.name LIKE :search OR product.sku LIKE :search OR product.barcode LIKE :search)',
         { search: `%${search}%` },
       );
+    }
+
+    // FILTER UNTUK PUBLIC - HANYA PRODUK AKTIF
+    if (isPublic) {
+      query.andWhere('product.isActive = :isActive', { isActive: true });
+    }
+    // FILTER UNTUK ADMIN
+    else if (isActive !== undefined) {
+      query.andWhere('product.isActive = :isActive', { isActive });
     }
 
     const [data, total] = await query
@@ -110,6 +126,22 @@ export class ProductsService {
     };
   }
 
+  // METHOD KHUSUS UNTUK PUBLIC
+  async findAllPublic(categoryId?: string, search?: string, page: number = 1, limit: number = 12) {
+    return this.findAll(categoryId, search, page, limit, undefined, true);
+  }
+
+  // METHOD BARU: Untuk dropdown (ambil semua produk tanpa pagination)
+  async findAllForDropdown() {
+    const products = await this.productRepository.find({
+      relations: ['category'],
+      order: {
+        name: 'ASC',
+      },
+    });
+    return products;
+  }
+
   async findOne(id: string) {
     const product = await this.productRepository.findOne({
       where: { id },
@@ -127,7 +159,6 @@ export class ProductsService {
     const product = await this.findOne(id);
 
     // Kalau ganti category, validasi
-    // Perbaikan: cek dulu apakah categoryId ada di DTO
     if (updateProductDto.categoryId && updateProductDto.categoryId !== product.categoryId) {
       const category = await this.categoryRepository.findOne({
         where: { id: updateProductDto.categoryId },
@@ -137,7 +168,7 @@ export class ProductsService {
       }
     }
 
-    // Hapus categoryId dari object sebelum assign (karena udah divalidasi)
+    // Hapus categoryId dari object sebelum assign
     const { categoryId, ...updateData } = updateProductDto;
 
     // Assign data yang akan diupdate

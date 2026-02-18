@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PlusIcon,
@@ -39,7 +39,7 @@ interface ProductFormData {
   sku?: string;
   minStock: number;
   price: number;
-  initialStock?: number; // Stok awal untuk produk baru
+  initialStock?: number;
 }
 
 // Format price dengan safe check
@@ -64,7 +64,11 @@ const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [showInactive, setShowInactive] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -78,6 +82,7 @@ const Products: React.FC = () => {
     initialStock: 0,
   });
 
+  const observer = useRef<IntersectionObserver | null>(null);
   const queryClient = useQueryClient();
 
   // Fetch categories
@@ -89,22 +94,19 @@ const Products: React.FC = () => {
     },
   });
 
-  // Fetch products
-  const { data, isLoading } = useQuery({
-    queryKey: [
-      "admin-products",
-      currentPage,
-      selectedCategory,
-      searchTerm,
-      showInactive,
-    ],
-    queryFn: async () => {
+  // Fetch initial products
+  const fetchProducts = async (pageNum: number, reset: boolean = false) => {
+    try {
       const params = new URLSearchParams();
-      params.append("page", currentPage.toString());
-      params.append("limit", "10");
+      params.append("page", pageNum.toString());
+      params.append("limit", "20"); // Lebih banyak untuk admin
       if (selectedCategory) params.append("categoryId", selectedCategory);
       if (searchTerm) params.append("search", searchTerm);
-      if (!showInactive) params.append("isActive", "true");
+
+      // FILTER isActive
+      if (!showInactive) {
+        params.append("isActive", "true");
+      }
 
       const response = await api.get(`/products?${params.toString()}`);
 
@@ -122,23 +124,22 @@ const Products: React.FC = () => {
               0,
             );
 
-            // Ambil harga dari stock pertama jika ada
-            let price = product.price || 0;
+            // Ambil harga dari stock jika ada
+            let price = product.price;
             if (stocks.length > 0 && stocks[0].sellingPrice) {
               price = stocks[0].sellingPrice;
             }
 
             return {
               ...product,
-              stockQuantity: totalStock,
               price: Number(price) || 0,
+              stockQuantity: totalStock,
             };
-          } catch (error) {
-            console.error(`Error fetching stock for ${product.name}:`, error);
+          } catch {
             return {
               ...product,
-              stockQuantity: 0,
               price: Number(product.price) || 0,
+              stockQuantity: 0,
             };
           }
         }),
@@ -148,13 +149,78 @@ const Products: React.FC = () => {
         data: productsWithStock,
         meta: response.data.meta,
       };
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      return null;
+    }
+  };
+
+  // Load initial products
+  const loadInitialProducts = useCallback(async () => {
+    setPage(1);
+    setIsLoadingMore(true);
+    const result = await fetchProducts(1);
+    if (result) {
+      setAllProducts(result.data);
+      setHasMore(result.meta.page < result.meta.totalPages);
+      setTotalProducts(result.meta.total);
+    }
+    setIsLoadingMore(false);
+  }, [selectedCategory, searchTerm, showInactive]);
+
+  // Load more products (infinite scroll)
+  const loadMoreProducts = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    const nextPage = page + 1;
+    const result = await fetchProducts(nextPage);
+
+    if (result) {
+      setAllProducts((prev) => [...prev, ...result.data]);
+      setPage(nextPage);
+      setHasMore(result.meta.page < result.meta.totalPages);
+    }
+
+    setIsLoadingMore(false);
+  }, [
+    isLoadingMore,
+    hasMore,
+    page,
+    selectedCategory,
+    searchTerm,
+    showInactive,
+  ]);
+
+  // Effect untuk memuat ulang saat filter berubah (dengan debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadInitialProducts();
+    }, 500); // Debounce 500ms
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedCategory, searchTerm, showInactive, loadInitialProducts]);
+
+  // Intersection Observer untuk infinite scroll
+  const lastProductRef = useCallback(
+    (node: HTMLTableRowElement) => {
+      if (isLoadingMore) return;
+      if (observer.current) observer.current.disconnect();
+
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMoreProducts();
+        }
+      });
+
+      if (node) observer.current.observe(node);
     },
-  });
+    [isLoadingMore, hasMore, loadMoreProducts],
+  );
 
   // Create product mutation
   const createMutation = useMutation({
     mutationFn: async (data: ProductFormData) => {
-      // 1. Buat produk dulu
       const productResponse = await api.post("/products", {
         name: data.name,
         description: data.description,
@@ -166,7 +232,6 @@ const Products: React.FC = () => {
 
       const newProduct = productResponse.data;
 
-      // 2. Tambah stok awal jika ada
       if (data.initialStock && data.initialStock > 0) {
         await api.post("/inventory/stock/in", {
           productId: newProduct.id,
@@ -174,7 +239,7 @@ const Products: React.FC = () => {
           type: "IN",
           batchCode: `BATCH-INITIAL-${Date.now()}`,
           sellingPrice: data.price,
-          purchasePrice: data.price * 0.7, // Asumsi harga beli 70% dari harga jual
+          purchasePrice: data.price * 0.7,
           notes: "Stok awal saat pembuatan produk",
         });
       }
@@ -182,7 +247,7 @@ const Products: React.FC = () => {
       return newProduct;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      loadInitialProducts();
       closeModal();
       toast.success("Produk berhasil ditambahkan");
     },
@@ -200,7 +265,6 @@ const Products: React.FC = () => {
       id: string;
       data: Partial<ProductFormData>;
     }) => {
-      // Update produk
       const response = await api.patch(`/products/${id}`, {
         name: data.name,
         description: data.description,
@@ -210,23 +274,10 @@ const Products: React.FC = () => {
         minStock: data.minStock,
       });
 
-      // Update harga di stock (jika ada)
-      if (data.price && data.price > 0) {
-        // Cari stock yang ada
-        const stockResponse = await api.get(`/inventory/stock?productId=${id}`);
-        const stocks = stockResponse.data.stocks || [];
-
-        if (stocks.length > 0) {
-          // Update harga di stock pertama (asumsi semua batch harga sama)
-          // Note: Ini perlu endpoint khusus untuk update harga stock
-          console.log("Harga baru:", data.price);
-        }
-      }
-
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      loadInitialProducts();
       closeModal();
       toast.success("Produk berhasil diupdate");
     },
@@ -242,11 +293,28 @@ const Products: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      loadInitialProducts();
       toast.success("Produk berhasil dihapus");
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Gagal menghapus produk");
+    },
+  });
+
+  // Toggle active status mutation
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const response = await api.patch(`/products/${id}`, { isActive });
+      return response.data;
+    },
+    onSuccess: () => {
+      loadInitialProducts();
+      toast.success("Status produk berhasil diubah");
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Gagal mengubah status produk",
+      );
     },
   });
 
@@ -277,7 +345,7 @@ const Products: React.FC = () => {
       sku: product.sku,
       minStock: product.minStock,
       price: product.price,
-      initialStock: 0, // Untuk edit, stok awal tidak dipakai
+      initialStock: 0,
     });
     setIsModalOpen(true);
   };
@@ -286,6 +354,15 @@ const Products: React.FC = () => {
   const handleDelete = (id: string, name: string) => {
     if (window.confirm(`Yakin ingin menghapus produk "${name}"?`)) {
       deleteMutation.mutate(id);
+    }
+  };
+
+  // Handle toggle active
+  const handleToggleActive = (product: Product) => {
+    const newStatus = !product.isActive;
+    const action = newStatus ? "mengaktifkan" : "menonaktifkan";
+    if (window.confirm(`Yakin ingin ${action} produk "${product.name}"?`)) {
+      toggleActiveMutation.mutate({ id: product.id, isActive: newStatus });
     }
   };
 
@@ -299,7 +376,6 @@ const Products: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validasi
     if (!formData.name.trim()) {
       toast.error("Nama produk harus diisi");
       return;
@@ -343,10 +419,7 @@ const Products: React.FC = () => {
     });
   };
 
-  const products = data?.data || [];
-  const meta = data?.meta;
-
-  if (isLoading) {
+  if (allProducts.length === 0 && isLoadingMore) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -374,12 +447,12 @@ const Products: React.FC = () => {
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Search */}
+          {/* Search - REAL-TIME */}
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Cari produk..."
+              placeholder="Cari produk (ketik langsung)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -420,7 +493,6 @@ const Products: React.FC = () => {
                 setSearchTerm("");
                 setSelectedCategory("");
                 setShowInactive(false);
-                setCurrentPage(1);
               }}
               className="text-gray-600 hover:text-primary-600 flex items-center gap-2"
             >
@@ -467,101 +539,101 @@ const Products: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {products.length === 0 ? (
+              {allProducts.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-center py-8 text-gray-500">
                     Tidak ada produk
                   </td>
                 </tr>
               ) : (
-                products.map((product: Product) => (
-                  <tr
-                    key={product.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="py-4 px-6 font-mono text-sm">
-                      {product.sku}
-                    </td>
-                    <td className="py-4 px-6 font-medium">{product.name}</td>
-                    <td className="py-4 px-6">{product.category.name}</td>
-                    <td className="py-4 px-6 font-semibold">
-                      {formatPrice(product.price)}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          product.stockQuantity === 0
-                            ? "bg-red-100 text-red-600"
-                            : product.stockQuantity < product.minStock
-                              ? "bg-yellow-100 text-yellow-600"
-                              : "bg-green-100 text-green-600"
-                        }`}
-                      >
-                        {product.stockQuantity}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">{product.minStock}</td>
-                    <td className="py-4 px-6">{product.unit}</td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          product.isActive
-                            ? "bg-green-100 text-green-600"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {product.isActive ? "Aktif" : "Non-aktif"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(product)}
-                          className="text-blue-600 hover:text-blue-700"
-                          title="Edit"
+                allProducts.map((product, index) => {
+                  const isLastItem = index === allProducts.length - 1;
+
+                  return (
+                    <tr
+                      key={product.id}
+                      ref={isLastItem ? lastProductRef : null}
+                      className="border-b border-gray-100 hover:bg-gray-50"
+                    >
+                      <td className="py-4 px-6 font-mono text-sm">
+                        {product.sku}
+                      </td>
+                      <td className="py-4 px-6 font-medium">{product.name}</td>
+                      <td className="py-4 px-6">{product.category.name}</td>
+                      <td className="py-4 px-6 font-semibold">
+                        {formatPrice(product.price)}
+                      </td>
+                      <td className="py-4 px-6">
+                        <span
+                          className={`px-2 py-1 rounded text-xs ${
+                            product.stockQuantity === 0
+                              ? "bg-red-100 text-red-600"
+                              : product.stockQuantity < product.minStock
+                                ? "bg-yellow-100 text-yellow-600"
+                                : "bg-green-100 text-green-600"
+                          }`}
                         >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
+                          {product.stockQuantity}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6">{product.minStock}</td>
+                      <td className="py-4 px-6">{product.unit}</td>
+                      <td className="py-4 px-6">
                         <button
-                          onClick={() => handleDelete(product.id, product.name)}
-                          className="text-red-600 hover:text-red-700"
-                          title="Hapus"
+                          onClick={() => handleToggleActive(product)}
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            product.isActive
+                              ? "bg-green-100 text-green-600 hover:bg-green-200"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          }`}
                         >
-                          <TrashIcon className="h-5 w-5" />
+                          {product.isActive ? "Aktif" : "Non-aktif"}
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(product)}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Edit"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDelete(product.id, product.name)
+                            }
+                            className="text-red-600 hover:text-red-700"
+                            title="Hapus"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
-        {meta && meta.totalPages > 1 && (
-          <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              Menampilkan {meta.page} dari {meta.totalPages} halaman
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={meta.page === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setCurrentPage((p) => p + 1)}
-                disabled={meta.page === meta.totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+        {/* Loading Indicator */}
+        {isLoadingMore && (
+          <div className="flex justify-center py-4">
+            <div className="w-6 h-6 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
         )}
+
+        {/* Info Total */}
+        <div className="px-6 py-4 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            Menampilkan {allProducts.length} dari {totalProducts} produk
+            {!hasMore &&
+              allProducts.length > 0 &&
+              " (Semua produk telah ditampilkan)"}
+          </p>
+        </div>
       </div>
 
       {/* Modal Form */}
