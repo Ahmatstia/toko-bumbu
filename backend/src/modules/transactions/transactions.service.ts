@@ -7,6 +7,7 @@ import { Product } from '../products/entities/product.entity';
 import { Stock } from '../inventory/entities/stock.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
+import { Inventory, InventoryType } from '../inventory/entities/inventory.entity';
 
 @Injectable()
 export class TransactionsService {
@@ -122,6 +123,7 @@ export class TransactionsService {
   }
 
   // Buat transaksi baru
+  // Buat transaksi baru
   async create(createTransactionDto: CreateTransactionDto, userId?: string) {
     const {
       items,
@@ -147,10 +149,13 @@ export class TransactionsService {
 
     const total = subtotal - discount;
 
-    if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
-      throw new BadRequestException(
-        `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
-      );
+    // PERBAIKAN: Hanya validasi untuk CASH
+    if (paymentMethod === PaymentMethod.CASH) {
+      if (paymentAmount < total) {
+        throw new BadRequestException(
+          `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
+        );
+      }
     }
 
     const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
@@ -173,7 +178,7 @@ export class TransactionsService {
       transaction.discount = discount;
       transaction.total = total;
       transaction.paymentMethod = paymentMethod;
-      transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total;
+      transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total; // SUDAH BENAR
       transaction.changeAmount = changeAmount;
 
       // Status selalu PENDING (menunggu konfirmasi via WA)
@@ -185,6 +190,7 @@ export class TransactionsService {
       // Buat item transaksi dan kurangi stok
       for (const item of validatedItems) {
         for (const allocation of item.allocations) {
+          // 1. Buat transaction item
           const transactionItem = new TransactionItem();
           transactionItem.transactionId = savedTransaction.id;
           transactionItem.productId = item.product.id;
@@ -195,6 +201,7 @@ export class TransactionsService {
 
           await queryRunner.manager.save(transactionItem);
 
+          // 2. Kurangi stok
           await queryRunner.manager
             .createQueryBuilder()
             .update(Stock)
@@ -203,6 +210,20 @@ export class TransactionsService {
             })
             .where('id = :id', { id: allocation.stock.id })
             .execute();
+
+          // 3. TAMBAHKAN HISTORY INVENTORY! (INI YANG KURANG)
+          const inventory = new Inventory();
+          inventory.productId = item.product.id;
+          inventory.type = InventoryType.OUT; // Pakai enum yang sudah ada
+          inventory.quantity = -allocation.quantity;
+          inventory.stockBefore = allocation.stock.quantity; // Stok sebelum dikurangi
+          inventory.stockAfter = allocation.stock.quantity - allocation.quantity; // Stok sesudah
+          inventory.batchCode = allocation.stock.batchCode;
+          inventory.notes = `Transaksi ${invoiceNumber}`;
+          inventory.referenceId = savedTransaction.id;
+          inventory.userId = userId || null;
+
+          await queryRunner.manager.save(inventory);
         }
       }
 

@@ -32,10 +32,9 @@ export class CreateTransactionDto {
   @IsOptional()
   isGuest?: boolean;
 
-  // Untuk customer registered
   @IsUUID()
   @IsOptional()
-  customerId?: string; // <-- PASTIKAN INI ADA
+  customerId?: string;
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
@@ -50,6 +49,12 @@ export class CreateTransactionDto {
   @Min(0)
   @Type(() => Number)
   discount?: number;
+
+  @IsNumber() // <-- TAMBAHKAN INI
+  @IsOptional()
+  @Min(0)
+  @Type(() => Number)
+  shippingCost?: number;
 
   @IsString()
   @IsOptional()

@@ -234,6 +234,10 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
     setIsProcessing(true);
 
     try {
+      const subtotal = getTotal();
+      const shippingCost = 5000;
+      const total = subtotal + shippingCost;
+
       // Siapkan data transaksi
       const transactionData: any = {
         items: items.map((item) => ({
@@ -241,8 +245,9 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
           quantity: item.quantity,
         })),
         paymentMethod: paymentMethod,
-        paymentAmount: getTotal(),
+        paymentAmount: paymentMethod === "CASH" ? total : total, // Untuk CASH, kirim total
         discount: 0,
+        shippingCost: shippingCost, // <-- TAMBAHKAN INI
       };
 
       // Tambah data customer dengan alamat LENGKAP
@@ -272,12 +277,14 @@ Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
         ? "/transactions/guest"
         : "/transactions/customer";
 
+      console.log("Sending transaction data:", transactionData); // <-- TAMBAHKAN LOG
       const response = await api.post(endpoint, transactionData);
 
       setCreatedTransaction(response.data);
       setShowWAPrompt(true);
     } catch (error: any) {
       console.error("Checkout error:", error);
+      console.error("Error response:", error.response?.data); // <-- TAMBAHKAN LOG
       toast.error(error.response?.data?.message || "Gagal memproses pesanan");
     } finally {
       setIsProcessing(false);
