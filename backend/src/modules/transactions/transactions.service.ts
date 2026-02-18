@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThan } from 'typeorm'; // <-- HAPUS MoreThan
+import { Repository, DataSource, LessThan } from 'typeorm';
 import { Transaction, TransactionStatus, PaymentMethod } from './entities/transaction.entity';
 import { TransactionItem } from './entities/transaction-item.entity';
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
@@ -179,7 +179,6 @@ export class TransactionsService {
     expiresAt.setHours(expiresAt.getHours() + expiresInHours);
     console.log(`Reservations expire at: ${expiresAt.toISOString()}`);
 
-    // PERBAIKAN: Deklarasikan tipe array
     const reservations: Reservation[] = [];
 
     for (const item of validatedItems) {
@@ -197,7 +196,7 @@ export class TransactionsService {
         reservation.status = ReservationStatus.ACTIVE;
 
         const saved = await this.reservationRepository.save(reservation);
-        reservations.push(saved); // <-- SEKARANG AMAN
+        reservations.push(saved);
         console.log(`    ✅ Reservation created with ID: ${saved.id}`);
       }
     }
@@ -211,188 +210,99 @@ export class TransactionsService {
     console.log('=== CREATE TRANSACTION START ===');
     console.log('DTO:', JSON.stringify(createTransactionDto, null, 2));
 
-    try {
-      const {
-        items,
-        customerName,
-        customerPhone,
-        isGuest,
-        customerId,
-        paymentMethod,
-        paymentAmount,
-        discount = 0,
-        notes,
-      } = createTransactionDto;
+    const {
+      items,
+      customerName,
+      customerPhone,
+      isGuest,
+      customerId,
+      paymentMethod,
+      paymentAmount,
+      discount = 0,
+      notes,
+    } = createTransactionDto;
 
-      if (!items || items.length === 0) {
-        throw new BadRequestException('Items tidak boleh kosong');
-      }
-
-      console.log('Validating stock for items:', items.length);
-      const validatedItems = await this.validateStock(items);
-      console.log('Stock validation passed, items:', validatedItems.length);
-
-      const subtotal = validatedItems.reduce((sum, item) => {
-        return sum + item.price * item.quantity;
-      }, 0);
-      console.log('Subtotal:', subtotal);
-
-      const total = subtotal - discount;
-      console.log('Total:', total);
-
-      // Untuk CASH, validasi pembayaran harus pas
-      if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
-        throw new BadRequestException(
-          `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
-        );
-      }
-
-      const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
-      const invoiceNumber = await this.generateInvoiceNumber();
-      console.log('Invoice number:', invoiceNumber);
-
-      // Set expiry 24 jam dari sekarang untuk non-CASH
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24);
-
-      const queryRunner = this.dataSource.createQueryRunner();
-      await queryRunner.connect();
-      await queryRunner.startTransaction();
-
-      try {
-        const transaction = new Transaction();
-        transaction.invoiceNumber = invoiceNumber;
-        transaction.userId = userId || null;
-        transaction.customerName = customerName || 'Guest';
-        transaction.customerPhone = customerPhone || '-';
-        transaction.isGuest = isGuest !== false;
-        transaction.customerId = customerId || null;
-        transaction.subtotal = subtotal;
-        transaction.discount = discount;
-        transaction.total = total;
-        transaction.paymentMethod = paymentMethod;
-        transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total;
-        transaction.changeAmount = changeAmount;
-        transaction.status = TransactionStatus.PENDING;
-        transaction.notes = notes || null;
-        transaction.expiresAt = paymentMethod === PaymentMethod.CASH ? null : expiresAt;
-
-        console.log('Saving transaction...');
-        const savedTransaction = await queryRunner.manager.save(transaction);
-        console.log('Transaction saved with ID:', savedTransaction.id);
-
-        // Buat item transaksi (tanpa kurangi stok)
-        console.log('Creating transaction items...');
-        for (const item of validatedItems) {
-          for (const allocation of item.allocations) {
-            const transactionItem = new TransactionItem();
-            transactionItem.transactionId = savedTransaction.id;
-            transactionItem.productId = item.product.id;
-            transactionItem.stockId = allocation.stock.id;
-            transactionItem.quantity = allocation.quantity;
-            transactionItem.price = item.price;
-            transactionItem.subtotal = item.price * allocation.quantity;
-
-            await queryRunner.manager.save(transactionItem);
-            console.log(`  - Item: ${item.product.name} x ${allocation.quantity}`);
-          }
-        }
-
-        // Buat RESERVASI (HOLD STOK)
-        console.log('Creating reservations...');
-        await this.createReservations(savedTransaction.id, validatedItems);
-
-        await queryRunner.commitTransaction();
-        console.log('Transaction committed successfully');
-
-        const result = await this.findOne(savedTransaction.id);
-        console.log('=== CREATE TRANSACTION SUCCESS ===');
-        return result;
-      } catch (error) {
-        console.error('Transaction error, rolling back:', error);
-        await queryRunner.rollbackTransaction();
-        throw error;
-      } finally {
-        await queryRunner.release();
-      }
-    } catch (error) {
-      console.error('=== CREATE TRANSACTION ERROR ===');
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      throw error;
+    if (!items || items.length === 0) {
+      throw new BadRequestException('Items tidak boleh kosong');
     }
-  }
 
-  // KONFIRMASI PEMBAYARAN (Kurangi stok)
-  async confirmPayment(transactionId: string, adminId: string) {
-    const transaction = await this.findOne(transactionId);
+    const validatedItems = await this.validateStock(items);
 
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException('Transaksi tidak dalam status PENDING');
+    const subtotal = validatedItems.reduce((sum, item) => {
+      return sum + item.price * item.quantity;
+    }, 0);
+
+    const total = subtotal - discount;
+
+    // Untuk CASH, validasi pembayaran harus pas
+    if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
+      throw new BadRequestException(
+        `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
+      );
     }
+
+    const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
+    const invoiceNumber = await this.generateInvoiceNumber();
+
+    // Set expiry 24 jam dari sekarang untuk non-CASH
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Ambil semua reservasi aktif
-      const reservations = await this.reservationRepository.find({
-        where: {
-          transactionId,
-          status: ReservationStatus.ACTIVE,
-        },
-        relations: ['stock', 'product'],
-      });
+      const transaction = new Transaction();
+      transaction.invoiceNumber = invoiceNumber;
+      transaction.userId = userId || null;
+      transaction.customerName = customerName || 'Guest';
+      transaction.customerPhone = customerPhone || '-';
+      transaction.isGuest = isGuest !== false;
+      transaction.customerId = customerId || null;
+      transaction.subtotal = subtotal;
+      transaction.discount = discount;
+      transaction.total = total;
+      transaction.paymentMethod = paymentMethod;
+      transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total;
+      transaction.changeAmount = changeAmount;
+      transaction.status = TransactionStatus.PENDING;
+      transaction.notes = notes || null;
+      transaction.expiresAt = paymentMethod === PaymentMethod.CASH ? null : expiresAt;
 
-      if (reservations.length === 0) {
-        throw new BadRequestException('Tidak ada reservasi untuk transaksi ini');
+      console.log('Saving transaction...');
+      const savedTransaction = await queryRunner.manager.save(transaction);
+      console.log('Transaction saved with ID:', savedTransaction.id);
+
+      // Buat item transaksi (tanpa kurangi stok)
+      console.log('Creating transaction items...');
+      for (const item of validatedItems) {
+        for (const allocation of item.allocations) {
+          const transactionItem = new TransactionItem();
+          transactionItem.transactionId = savedTransaction.id;
+          transactionItem.productId = item.product.id;
+          transactionItem.stockId = allocation.stock.id;
+          transactionItem.quantity = allocation.quantity;
+          transactionItem.price = item.price;
+          transactionItem.subtotal = item.price * allocation.quantity;
+
+          await queryRunner.manager.save(transactionItem);
+          console.log(`  - Item: ${item.product.name} x ${allocation.quantity}`);
+        }
       }
 
-      // Kurangi stok dan catat history
-      for (const res of reservations) {
-        // Kurangi stok
-        await queryRunner.manager
-          .createQueryBuilder()
-          .update(Stock)
-          .set({
-            quantity: () => `quantity - ${res.quantity}`,
-          })
-          .where('id = :id', { id: res.stockId })
-          .execute();
-
-        // Catat history inventory
-        const inventory = new Inventory();
-        inventory.productId = res.productId;
-        inventory.type = InventoryType.OUT;
-        inventory.quantity = -res.quantity;
-        inventory.stockBefore = res.stock.quantity;
-        inventory.stockAfter = res.stock.quantity - res.quantity;
-        inventory.batchCode = res.stock.batchCode;
-        inventory.notes = `Transaksi ${transaction.invoiceNumber}`;
-        inventory.referenceId = transactionId;
-        inventory.userId = adminId;
-
-        await queryRunner.manager.save(inventory);
-
-        // Update status reservasi
-        res.status = ReservationStatus.CONFIRMED;
-        res.confirmedAt = new Date();
-        await queryRunner.manager.save(res);
-      }
-
-      // Update status transaksi
-      transaction.status = TransactionStatus.COMPLETED;
-      await queryRunner.manager.save(transaction);
+      // Buat RESERVASI (HOLD STOK)
+      console.log('Creating reservations...');
+      await this.createReservations(savedTransaction.id, validatedItems);
 
       await queryRunner.commitTransaction();
+      console.log('Transaction committed successfully');
 
-      return {
-        message: 'Pembayaran dikonfirmasi, stok berhasil dikurangi',
-        transaction,
-      };
+      const result = await this.findOne(savedTransaction.id);
+      console.log('=== CREATE TRANSACTION SUCCESS ===');
+      return result;
     } catch (error) {
+      console.error('Transaction error, rolling back:', error);
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
@@ -400,8 +310,77 @@ export class TransactionsService {
     }
   }
 
+  async confirmPayment(transactionId: string, adminId: string) {
+    console.log('========== CONFIRM PAYMENT ==========');
+    console.log(`Transaction ID: ${transactionId}`);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. AMBIL RESERVASI PAKAI QUERY BUILDER
+      const reservations = await queryRunner.manager
+        .createQueryBuilder(Reservation, 'r')
+        .where('r.transactionId = :transactionId', { transactionId })
+        .andWhere('r.status = :status', { status: 'ACTIVE' })
+        .leftJoinAndSelect('r.stock', 'stock')
+        .getMany();
+
+      console.log(`Found ${reservations.length} reservations`);
+
+      if (reservations.length === 0) {
+        throw new Error('No active reservations found');
+      }
+
+      // 2. KURANGI STOK
+      for (const res of reservations) {
+        console.log(`Updating stock ${res.stockId}, quantity ${res.quantity}`);
+
+        const updateResult = await queryRunner.manager
+          .createQueryBuilder()
+          .update(Stock)
+          .set({ quantity: () => `quantity - ${res.quantity}` })
+          .where('id = :id', { id: res.stockId })
+          .execute();
+
+        console.log(`Stock updated: ${updateResult.affected} rows`);
+
+        // 3. UPDATE RESERVASI
+        await queryRunner.manager
+          .createQueryBuilder()
+          .update(Reservation)
+          .set({
+            status: 'CONFIRMED',
+            confirmedAt: new Date(),
+          })
+          .where('id = :id', { id: res.id })
+          .execute();
+      }
+
+      // 4. UPDATE TRANSAKSI
+      await queryRunner.manager
+        .createQueryBuilder()
+        .update(Transaction)
+        .set({ status: 'COMPLETED' })
+        .where('id = :id', { id: transactionId })
+        .execute();
+
+      await queryRunner.commitTransaction();
+      console.log('✅ SUCCESS');
+    } catch (error) {
+      console.error('❌ ERROR:', error);
+      await queryRunner.rollbackTransaction();
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   // BATALKAN TRANSAKSI (Stok kembali)
   async cancelTransaction(transactionId: string, reason: string) {
+    console.log('=== CANCEL TRANSACTION START ===');
+    console.log(`Transaction ID: ${transactionId}, Reason: ${reason}`);
+
     const transaction = await this.findOne(transactionId);
 
     if (![TransactionStatus.PENDING, TransactionStatus.PROCESSING].includes(transaction.status)) {
@@ -414,13 +393,15 @@ export class TransactionsService {
 
     try {
       // Update status reservasi
-      await queryRunner.manager
+      const updateResult = await queryRunner.manager
         .createQueryBuilder()
         .update(Reservation)
         .set({ status: ReservationStatus.CANCELLED })
         .where('transactionId = :transactionId', { transactionId })
         .andWhere('status = :status', { status: ReservationStatus.ACTIVE })
         .execute();
+
+      console.log(`Reservations cancelled: ${updateResult.affected}`);
 
       // Update status transaksi
       transaction.status = TransactionStatus.CANCELLED;
@@ -429,14 +410,17 @@ export class TransactionsService {
         : `CANCELLED: ${reason}`;
 
       await queryRunner.manager.save(transaction);
+      console.log(`Transaction status updated to CANCELLED`);
 
       await queryRunner.commitTransaction();
+      console.log('=== CANCEL TRANSACTION SUCCESS ===');
 
       return {
         message: 'Transaksi dibatalkan, stok tersedia kembali',
         transaction,
       };
     } catch (error) {
+      console.error('Cancel transaction error, rolling back:', error);
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
@@ -446,6 +430,7 @@ export class TransactionsService {
 
   // PROSES RESERVASI EXPIRED (Cron job)
   async processExpiredReservations() {
+    console.log('=== PROCESS EXPIRED RESERVATIONS START ===');
     const now = new Date();
 
     const expiredReservations = await this.reservationRepository
@@ -454,6 +439,8 @@ export class TransactionsService {
       .where('reservation.status = :status', { status: ReservationStatus.ACTIVE })
       .andWhere('reservation.expiresAt < :now', { now })
       .getMany();
+
+    console.log(`Found ${expiredReservations.length} expired reservations`);
 
     const transactionIds = [...new Set(expiredReservations.map((r) => r.transactionId))];
 
@@ -473,6 +460,9 @@ export class TransactionsService {
         .where('id = :id', { id: transactionId })
         .execute();
     }
+
+    console.log(`Processed ${expiredReservations.length} expired reservations`);
+    console.log('=== PROCESS EXPIRED RESERVATIONS END ===');
 
     return {
       processed: expiredReservations.length,
@@ -528,11 +518,18 @@ export class TransactionsService {
     return this.transactionRepository.save(transaction);
   }
 
-  // Cari transaksi berdasarkan ID
+  // Cari transaksi berdasarkan ID - FIXED
   async findOne(id: string) {
     const transaction = await this.transactionRepository.findOne({
       where: { id },
-      relations: ['items', 'items.product', 'user', 'reservations'],
+      relations: [
+        'items',
+        'items.product',
+        'user',
+        'reservations',
+        'reservations.stock', // <-- TAMBAHKAN INI
+        'reservations.product', // <-- TAMBAHKAN INI
+      ],
     });
 
     if (!transaction) {
@@ -542,11 +539,18 @@ export class TransactionsService {
     return transaction;
   }
 
-  // Cari berdasarkan invoice number
+  // Cari berdasarkan invoice number - FIXED
   async findByInvoice(invoiceNumber: string) {
     const transaction = await this.transactionRepository.findOne({
       where: { invoiceNumber },
-      relations: ['items', 'items.product', 'user', 'reservations'],
+      relations: [
+        'items',
+        'items.product',
+        'user',
+        'reservations',
+        'reservations.stock', // <-- TAMBAHKAN INI
+        'reservations.product', // <-- TAMBAHKAN INI
+      ],
     });
 
     if (!transaction) {
@@ -570,7 +574,9 @@ export class TransactionsService {
       .createQueryBuilder('transaction')
       .leftJoinAndSelect('transaction.user', 'user')
       .leftJoinAndSelect('transaction.items', 'items')
-      .leftJoinAndSelect('items.product', 'product');
+      .leftJoinAndSelect('items.product', 'product')
+      .leftJoinAndSelect('transaction.reservations', 'reservations')
+      .leftJoinAndSelect('reservations.stock', 'stock');
 
     if (startDate) {
       query.andWhere('transaction.createdAt >= :startDate', { startDate });
@@ -616,7 +622,7 @@ export class TransactionsService {
   async findByCustomer(customerId: string) {
     const transactions = await this.transactionRepository.find({
       where: { customerId },
-      relations: ['items', 'items.product'],
+      relations: ['items', 'items.product', 'reservations'],
       order: { createdAt: 'DESC' },
     });
 
@@ -650,6 +656,3 @@ export class TransactionsService {
     };
   }
 }
-
-// Helper untuk MoreThan
-const MoreThan = (value: number) => ({ _type: 'moreThan', _value: value });

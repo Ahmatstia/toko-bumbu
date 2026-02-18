@@ -85,6 +85,8 @@ export class TransactionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async confirmPayment(@Param('id') id: string, @Request() req) {
+    console.log(`🔹 Confirm payment endpoint called for transaction: ${id}`);
+    console.log(`🔹 Admin: ${req.user?.id} - ${req.user?.username}`);
     return this.transactionsService.confirmPayment(id, req.user.id);
   }
 
