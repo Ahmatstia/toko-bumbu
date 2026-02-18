@@ -10,21 +10,18 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { TransactionItem } from './transaction-item.entity';
-import { Customer } from '../../customers/entities/customer.entity'; // <-- IMPORT
+import { Customer } from '../../customers/entities/customer.entity';
 
 export enum PaymentMethod {
   CASH = 'CASH',
-  DEBIT = 'DEBIT',
-  CREDIT = 'CREDIT',
-  QRIS = 'QRIS',
-  TRANSFER = 'TRANSFER',
+  TRANSFER = 'TRANSFER', // Untuk pembayaran via WhatsApp (Transfer/QRIS)
 }
 
 export enum TransactionStatus {
-  PENDING = 'PENDING',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
-  REFUNDED = 'REFUNDED',
+  PENDING = 'PENDING', // Menunggu konfirmasi via WA
+  PROCESSING = 'PROCESSING', // Sedang diproses
+  COMPLETED = 'COMPLETED', // Selesai
+  CANCELLED = 'CANCELLED', // Dibatalkan
 }
 
 @Entity('transactions')
@@ -42,34 +39,22 @@ export class Transaction {
   @JoinColumn({ name: 'user_id' })
   user: User | null;
 
-  // Customer fields
-  @Column({ name: 'customer_id', nullable: true, type: 'varchar', length: 36 }) // <-- PASTIKAN INI
+  @Column({ name: 'customer_id', nullable: true, type: 'varchar', length: 36 })
   customerId: string | null;
 
   @ManyToOne(() => Customer, { nullable: true })
   @JoinColumn({ name: 'customer_id' })
   customer: Customer | null;
 
-  @Column({
-    name: 'customer_name',
-    nullable: true,
-    type: 'varchar',
-    length: 100,
-  })
+  @Column({ name: 'customer_name', nullable: true, type: 'varchar', length: 100 })
   customerName: string;
 
-  @Column({
-    name: 'customer_phone',
-    nullable: true,
-    type: 'varchar',
-    length: 20,
-  })
+  @Column({ name: 'customer_phone', nullable: true, type: 'varchar', length: 20 })
   customerPhone: string;
 
   @Column({ name: 'is_guest', default: true, type: 'boolean' })
   isGuest: boolean;
 
-  // Financial fields
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   subtotal: number;
 
@@ -92,22 +77,20 @@ export class Transaction {
   @Column({ name: 'payment_amount', type: 'decimal', precision: 10, scale: 2 })
   paymentAmount: number;
 
-  @Column({ name: 'change_amount', type: 'decimal', precision: 10, scale: 2 })
+  @Column({ name: 'change_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
   changeAmount: number;
 
   @Column({
     type: 'enum',
     enum: TransactionStatus,
-    default: TransactionStatus.COMPLETED,
+    default: TransactionStatus.PENDING,
   })
   status: TransactionStatus;
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
-  @OneToMany(() => TransactionItem, (item) => item.transaction, {
-    cascade: true,
-  })
+  @OneToMany(() => TransactionItem, (item) => item.transaction, { cascade: true })
   items: TransactionItem[];
 
   @CreateDateColumn({ name: 'created_at' })

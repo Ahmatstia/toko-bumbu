@@ -5,8 +5,6 @@ import { Transaction, TransactionStatus, PaymentMethod } from './entities/transa
 import { TransactionItem } from './entities/transaction-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { Stock } from '../inventory/entities/stock.entity';
-import { InventoryService } from '../inventory/inventory.service';
-import { InventoryType } from '../inventory/entities/inventory.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 
@@ -21,7 +19,6 @@ export class TransactionsService {
     private productRepository: Repository<Product>,
     @InjectRepository(Stock)
     private stockRepository: Repository<Stock>,
-    private inventoryService: InventoryService,
     private dataSource: DataSource,
   ) {}
 
@@ -34,12 +31,9 @@ export class TransactionsService {
 
     const dateStr = `${year}${month}${day}`;
 
-    // Cari transaksi terakhir hari ini
     const lastTransaction = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .where('transaction.invoiceNumber LIKE :pattern', {
-        pattern: `INV-${dateStr}-%`,
-      })
+      .where('transaction.invoiceNumber LIKE :pattern', { pattern: `INV-${dateStr}-%` })
       .orderBy('transaction.invoiceNumber', 'DESC')
       .getOne();
 
@@ -52,9 +46,8 @@ export class TransactionsService {
     return `INV-${dateStr}-${String(sequence).padStart(4, '0')}`;
   }
 
-  // Validasi stok sebelum transaksi
+  // Validasi stok
   private async validateStock(items: AddToCartDto[]): Promise<any[]> {
-    // Definisikan type
     type StockAllocation = {
       stock: Stock;
       quantity: number;
@@ -78,7 +71,6 @@ export class TransactionsService {
         throw new NotFoundException(`Product ${item.productId} tidak ditemukan`);
       }
 
-      // Cari stok yang available (FIFO: yang expired duluan)
       let stockQuery = this.stockRepository
         .createQueryBuilder('stock')
         .where('stock.productId = :productId', { productId: item.productId })
@@ -87,9 +79,7 @@ export class TransactionsService {
         .addOrderBy('stock.createdAt', 'ASC');
 
       if (item.stockId) {
-        stockQuery = stockQuery.andWhere('stock.id = :stockId', {
-          stockId: item.stockId,
-        });
+        stockQuery = stockQuery.andWhere('stock.id = :stockId', { stockId: item.stockId });
       }
 
       const availableStocks = await stockQuery.getMany();
@@ -118,7 +108,6 @@ export class TransactionsService {
         );
       }
 
-      // Ambil harga jual dari stock pertama
       const price = stockAllocations[0]?.stock.sellingPrice || 0;
 
       validatedItems.push({
@@ -146,62 +135,56 @@ export class TransactionsService {
       notes,
     } = createTransactionDto;
 
-    // Validasi items
     if (!items || items.length === 0) {
       throw new BadRequestException('Items tidak boleh kosong');
     }
 
-    // Validasi stok
     const validatedItems = await this.validateStock(items);
 
-    // Hitung subtotal
     const subtotal = validatedItems.reduce((sum, item) => {
       return sum + item.price * item.quantity;
     }, 0);
 
     const total = subtotal - discount;
 
-    // Validasi pembayaran
-    if (paymentAmount < total) {
+    if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
       throw new BadRequestException(
         `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
       );
     }
 
-    const changeAmount = paymentAmount - total;
+    const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
 
-    // Generate invoice number
     const invoiceNumber = await this.generateInvoiceNumber();
 
-    // Gunakan transaction database
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // 1. Buat transaksi header
       const transaction = new Transaction();
       transaction.invoiceNumber = invoiceNumber;
       transaction.userId = userId || null;
       transaction.customerName = customerName || 'Guest';
       transaction.customerPhone = customerPhone || '-';
       transaction.isGuest = isGuest !== false;
-      transaction.customerId = customerId || null; // <-- PASTIKAN INI
+      transaction.customerId = customerId || null;
       transaction.subtotal = subtotal;
       transaction.discount = discount;
       transaction.total = total;
       transaction.paymentMethod = paymentMethod;
-      transaction.paymentAmount = paymentAmount;
+      transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total;
       transaction.changeAmount = changeAmount;
-      transaction.status = TransactionStatus.COMPLETED;
+
+      // Status selalu PENDING (menunggu konfirmasi via WA)
+      transaction.status = TransactionStatus.PENDING;
       transaction.notes = notes || null;
 
       const savedTransaction = await queryRunner.manager.save(transaction);
 
-      // 2. Buat item transaksi dan kurangi stok
+      // Buat item transaksi dan kurangi stok
       for (const item of validatedItems) {
         for (const allocation of item.allocations) {
-          // Buat transaction item
           const transactionItem = new TransactionItem();
           transactionItem.transactionId = savedTransaction.id;
           transactionItem.productId = item.product.id;
@@ -212,7 +195,6 @@ export class TransactionsService {
 
           await queryRunner.manager.save(transactionItem);
 
-          // Update stok langsung
           await queryRunner.manager
             .createQueryBuilder()
             .update(Stock)
@@ -226,11 +208,6 @@ export class TransactionsService {
 
       await queryRunner.commitTransaction();
 
-      // Catat ke inventory service di background
-      this.recordInventoryLog(validatedItems, invoiceNumber, savedTransaction.id).catch(
-        console.error,
-      );
-
       return this.findOne(savedTransaction.id);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -240,28 +217,11 @@ export class TransactionsService {
     }
   }
 
-  // Method terpisah untuk catat inventory (biar ga blocking)
-  private async recordInventoryLog(
-    validatedItems: any[],
-    invoiceNumber: string,
-    transactionId: string,
-  ) {
-    try {
-      for (const item of validatedItems) {
-        for (const allocation of item.allocations) {
-          await this.inventoryService.addStock({
-            productId: item.product.id,
-            type: InventoryType.OUT,
-            quantity: allocation.quantity,
-            batchCode: allocation.stock.batchCode || undefined,
-            notes: `Transaksi ${invoiceNumber}`,
-            referenceId: transactionId,
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Gagal catat inventory log:', error);
-    }
+  // Update status transaksi (via admin)
+  async updateStatus(id: string, status: TransactionStatus) {
+    const transaction = await this.findOne(id);
+    transaction.status = status;
+    return this.transactionRepository.save(transaction);
   }
 
   // Cari transaksi berdasarkan ID
@@ -292,7 +252,7 @@ export class TransactionsService {
     return transaction;
   }
 
-  // Dapatkan semua transaksi (dengan filter)
+  // Dapatkan semua transaksi
   async findAll(
     startDate?: Date,
     endDate?: Date,
@@ -321,9 +281,7 @@ export class TransactionsService {
     }
 
     if (paymentMethod) {
-      query.andWhere('transaction.paymentMethod = :paymentMethod', {
-        paymentMethod,
-      });
+      query.andWhere('transaction.paymentMethod = :paymentMethod', { paymentMethod });
     }
 
     if (search) {
@@ -350,6 +308,17 @@ export class TransactionsService {
     };
   }
 
+  // Dapatkan transaksi customer
+  async findByCustomer(customerId: string) {
+    const transactions = await this.transactionRepository.find({
+      where: { customerId },
+      relations: ['items', 'items.product'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return transactions;
+  }
+
   // Hitung total penjualan hari ini
   async getTodaySales() {
     const startOfDay = new Date();
@@ -364,13 +333,8 @@ export class TransactionsService {
       .addSelect('SUM(transaction.total)', 'total')
       .addSelect('SUM(transaction.paymentAmount)', 'payment')
       .addSelect('AVG(transaction.total)', 'average')
-      .where('transaction.createdAt BETWEEN :start AND :end', {
-        start: startOfDay,
-        end: endOfDay,
-      })
-      .andWhere('transaction.status = :status', {
-        status: TransactionStatus.COMPLETED,
-      })
+      .where('transaction.createdAt BETWEEN :start AND :end', { start: startOfDay, end: endOfDay })
+      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
       .getRawOne();
 
     return {
@@ -380,63 +344,5 @@ export class TransactionsService {
       totalPayment: parseFloat(result.payment) || 0,
       averageTransaction: parseFloat(result.average) || 0,
     };
-  }
-
-  async findByCustomer(customerId: string) {
-    const transactions = await this.transactionRepository.find({
-      where: { customerId },
-      relations: ['items', 'items.product'],
-      order: { createdAt: 'DESC' },
-    });
-
-    return transactions;
-  }
-
-  // Batalkan transaksi (refund)
-  async cancel(id: string, reason: string) {
-    const transaction = await this.findOne(id);
-
-    if (transaction.status !== TransactionStatus.COMPLETED) {
-      throw new BadRequestException('Hanya transaksi COMPLETED yang bisa dibatalkan');
-    }
-
-    // Gunakan transaction database
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // Update status transaksi
-      transaction.status = TransactionStatus.CANCELLED;
-      transaction.notes = transaction.notes
-        ? `CANCELLED: ${reason} | ${transaction.notes}`
-        : `CANCELLED: ${reason}`;
-
-      await queryRunner.manager.save(transaction);
-
-      // Kembalikan stok (via inventory service)
-      for (const item of transaction.items) {
-        await this.inventoryService.addStock({
-          productId: item.productId,
-          type: InventoryType.RETURN,
-          quantity: item.quantity,
-          batchCode: item.stock?.batchCode || undefined,
-          notes: `Return dari transaksi ${transaction.invoiceNumber}`,
-          referenceId: transaction.id,
-        });
-      }
-
-      await queryRunner.commitTransaction();
-
-      return {
-        message: 'Transaksi berhasil dibatalkan',
-        transaction,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
   }
 }

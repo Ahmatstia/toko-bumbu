@@ -3,12 +3,11 @@ import {
   Get,
   Post,
   Body,
-  Patch,
   Param,
-  Delete,
   UseGuards,
   Request,
   Query,
+  Patch,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -18,12 +17,21 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { TransactionStatus, PaymentMethod } from './entities/transaction.entity';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
-  // Endpoint untuk KASIR (pake token admin)
+  // ========== PUBLIC ENDPOINTS ==========
+
+  @Post('guest')
+  @Public()
+  async createGuest(@Body() createTransactionDto: CreateTransactionDto) {
+    createTransactionDto.isGuest = true;
+    return this.transactionsService.create(createTransactionDto, undefined);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
@@ -32,12 +40,10 @@ export class TransactionsController {
     return this.transactionsService.create(createTransactionDto, userId);
   }
 
-  // Endpoint untuk CUSTOMER yang login
   @Post('customer')
   @UseGuards(CustomerJwtGuard)
   async createAsCustomer(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
-    // Set customer info dari token
-    createTransactionDto.customerId = req.user.id; // <-- PASTIKAN INI ADA
+    createTransactionDto.customerId = req.user.id;
     createTransactionDto.customerName = req.user.name;
     createTransactionDto.customerPhone = req.user.phone;
     createTransactionDto.isGuest = false;
@@ -45,14 +51,35 @@ export class TransactionsController {
     return this.transactionsService.create(createTransactionDto, undefined);
   }
 
-  // Endpoint untuk customer lihat history transaksi sendiri
+  // ========== PUBLIC CHECK STATUS ==========
+  @Get('status/:invoiceNumber')
+  @Public()
+  async getStatus(@Param('invoiceNumber') invoiceNumber: string) {
+    const transaction = await this.transactionsService.findByInvoice(invoiceNumber);
+    return {
+      invoiceNumber: transaction.invoiceNumber,
+      status: transaction.status,
+      total: transaction.total,
+      paymentMethod: transaction.paymentMethod,
+      createdAt: transaction.createdAt,
+    };
+  }
+
+  // ========== CUSTOMER ENDPOINTS ==========
   @Get('customer/history')
   @UseGuards(CustomerJwtGuard)
   async getCustomerTransactions(@Request() req) {
     return this.transactionsService.findByCustomer(req.user.id);
   }
 
-  // Endpoint untuk admin lihat semua transaksi
+  // ========== ADMIN ENDPOINTS ==========
+  @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async updateStatus(@Param('id') id: string, @Body('status') status: TransactionStatus) {
+    return this.transactionsService.updateStatus(id, status);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
@@ -95,12 +122,5 @@ export class TransactionsController {
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async findOne(@Param('id') id: string) {
     return this.transactionsService.findOne(id);
-  }
-
-  @Patch(':id/cancel')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async cancel(@Param('id') id: string, @Body('reason') reason: string) {
-    return this.transactionsService.cancel(id, reason);
   }
 }

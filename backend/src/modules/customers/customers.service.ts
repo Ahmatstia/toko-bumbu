@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Like } from 'typeorm';
 import { Customer } from './entities/customer.entity';
 import { CustomerAddress } from './entities/customer-address.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -14,6 +14,8 @@ export class CustomersService {
     @InjectRepository(CustomerAddress)
     private addressRepository: Repository<CustomerAddress>,
   ) {}
+
+  // ========== METHOD UNTUK CUSTOMER (YANG SUDAH ADA) ==========
 
   async updateProfile(customerId: string, updateDto: UpdateProfileDto) {
     const customer = await this.customerRepository.findOne({
@@ -54,7 +56,6 @@ export class CustomersService {
       throw new NotFoundException('Customer not found');
     }
 
-    // If this is default address, remove default from others
     if (createAddressDto.isDefault) {
       await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
     }
@@ -83,7 +84,6 @@ export class CustomersService {
       throw new NotFoundException('Address not found');
     }
 
-    // If setting as default, remove default from others
     if (updateDto.isDefault) {
       await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
     }
@@ -106,12 +106,77 @@ export class CustomersService {
   }
 
   async setDefaultAddress(customerId: string, addressId: string) {
-    // Remove default from all
     await this.addressRepository.update({ customerId, isDefault: true }, { isDefault: false });
-
-    // Set new default
     await this.addressRepository.update({ id: addressId, customerId }, { isDefault: true });
-
     return { message: 'Default address updated' };
+  }
+
+  // ========== METHOD BARU UNTUK ADMIN ==========
+
+  async findAll(page: number = 1, limit: number = 10, search?: string) {
+    const where = search
+      ? [
+          { name: Like(`%${search}%`) },
+          { email: Like(`%${search}%`) },
+          { phone: Like(`%${search}%`) },
+        ]
+      : {};
+
+    const [data, total] = await this.customerRepository.findAndCount({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      order: { createdAt: 'DESC' },
+      select: ['id', 'name', 'email', 'phone', 'totalTransactions', 'totalSpent', 'createdAt'], // Jangan include password
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getStats() {
+    const total = await this.customerRepository.count();
+    const active = await this.customerRepository.count({ where: { isActive: true } });
+
+    const totalSpent = await this.customerRepository
+      .createQueryBuilder('customer')
+      .select('SUM(customer.totalSpent)', 'total')
+      .getRawOne();
+
+    return {
+      totalCustomers: total,
+      activeCustomers: active,
+      totalSpent: totalSpent?.total || 0,
+    };
+  }
+
+  async findOne(id: string) {
+    const customer = await this.customerRepository.findOne({
+      where: { id },
+      relations: ['addresses'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'phone',
+        'totalTransactions',
+        'totalSpent',
+        'createdAt',
+        'isActive',
+      ],
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    return customer;
   }
 }

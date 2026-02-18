@@ -2,18 +2,20 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CustomersService } from './customers.service';
 import { CustomersController } from './customers.controller';
+import { AdminCustomersController } from './admin-customers.controller'; // <-- TAMBAHKAN
 import { Customer } from './entities/customer.entity';
 import { CustomerAddress } from './entities/customer-address.entity';
-import { CustomerAuthModule } from './auth/customer-auth.module'; // Import module, bukan service
+import { CustomerAuthModule } from './auth/customer-auth.module';
 import { CustomerAuthController } from './auth/customer-auth.controller';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Customer, CustomerAddress]),
-    CustomerAuthModule, // <-- Import module, bukan providers
+  imports: [TypeOrmModule.forFeature([Customer, CustomerAddress]), CustomerAuthModule],
+  controllers: [
+    CustomersController,
+    CustomerAuthController,
+    AdminCustomersController, // <-- TAMBAHKAN
   ],
-  controllers: [CustomersController, CustomerAuthController],
-  providers: [CustomersService], // <-- Hanya CustomersService, CustomerAuthService sudah di module
+  providers: [CustomersService],
   exports: [CustomersService],
 })
 export class CustomersModule {}

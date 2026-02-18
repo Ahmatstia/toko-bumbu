@@ -14,7 +14,7 @@ import { InventoryModule } from '../inventory/inventory.module';
     InventoryModule,
   ],
   controllers: [TransactionsController],
-  providers: [TransactionsService],
+  providers: [TransactionsService], // HAPUS QRCodeService
   exports: [TransactionsService],
 })
 export class TransactionsModule {}

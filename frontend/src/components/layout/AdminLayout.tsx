@@ -24,6 +24,7 @@ const AdminLayout: React.FC = () => {
         </div>
         <nav className="p-4">
           <ul className="space-y-2">
+            {/* Dashboard */}
             <li>
               <Link
                 to="/admin"
@@ -32,6 +33,8 @@ const AdminLayout: React.FC = () => {
                 Dashboard
               </Link>
             </li>
+
+            {/* POS / Kasir */}
             <li>
               <Link
                 to="/admin/pos"
@@ -40,6 +43,18 @@ const AdminLayout: React.FC = () => {
                 POS / Kasir
               </Link>
             </li>
+
+            {/* Transaksi */}
+            <li>
+              <Link
+                to="/admin/transactions"
+                className="block px-4 py-2 rounded hover:bg-primary-50 hover:text-primary-600"
+              >
+                Transaksi
+              </Link>
+            </li>
+
+            {/* Produk */}
             <li>
               <Link
                 to="/admin/products"
@@ -48,6 +63,8 @@ const AdminLayout: React.FC = () => {
                 Produk
               </Link>
             </li>
+
+            {/* Kategori */}
             <li>
               <Link
                 to="/admin/categories"
@@ -56,6 +73,8 @@ const AdminLayout: React.FC = () => {
                 Kategori
               </Link>
             </li>
+
+            {/* Stok */}
             <li>
               <Link
                 to="/admin/inventory"
@@ -64,6 +83,8 @@ const AdminLayout: React.FC = () => {
                 Stok
               </Link>
             </li>
+
+            {/* Laporan */}
             <li>
               <Link
                 to="/admin/reports"
@@ -72,6 +93,8 @@ const AdminLayout: React.FC = () => {
                 Laporan
               </Link>
             </li>
+
+            {/* Staff (hanya untuk OWNER) */}
             {role === "OWNER" && (
               <li>
                 <Link

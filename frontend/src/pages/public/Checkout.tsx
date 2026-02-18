@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import api from '../../services/api';
-import { useCartStore } from '../../store/cartStore';
-import { authService } from '../../services/auth.service';
-import toast from 'react-hot-toast';
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowLeftIcon,
+  CheckCircleIcon,
+  BanknotesIcon,
+  PhoneIcon,
+  ChatBubbleLeftRightIcon,
+} from "@heroicons/react/24/outline";
+import api from "../../services/api";
+import { useCartStore } from "../../store/cartStore";
+import { authService } from "../../services/auth.service";
+import toast from "react-hot-toast";
+
+// Nomor WhatsApp Admin (ganti dengan nomor toko)
+const ADMIN_WHATSAPP = "6282371663414"; // Format internasional tanpa +
 
 interface Address {
   id: string;
@@ -22,38 +31,47 @@ interface Address {
 
 const Checkout: React.FC = () => {
   const navigate = useNavigate();
-  const { items, clearCart, getTotal } = useCartStore();
+  const { items, clearCart, getTotal, getItemCount } = useCartStore();
   const user = authService.getCurrentUser();
   const isAuthenticated = authService.isAuthenticated();
-  const isCustomer = authService.isCustomer();
+  const isCustomer = authService.isCustomer?.() || false;
 
   const [isGuest, setIsGuest] = useState(!isAuthenticated);
-  const [selectedAddress, setSelectedAddress] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [selectedAddress, setSelectedAddress] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showWAPrompt, setShowWAPrompt] = useState(false);
+  const [createdTransaction, setCreatedTransaction] = useState<any>(null);
 
   // Form state untuk guest
   const [guestForm, setGuestForm] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
   });
 
   // Fetch addresses untuk customer yang login
   const { data: addresses, isLoading: addressesLoading } = useQuery<Address[]>({
-    queryKey: ['customer-addresses'],
+    queryKey: ["customer-addresses"],
     queryFn: async () => {
-      const response = await api.get('/customer/addresses');
+      const response = await api.get("/customer/addresses");
       return response.data;
     },
     enabled: isAuthenticated && isCustomer,
   });
 
+  // Redirect jika cart kosong
+  useEffect(() => {
+    if (items.length === 0) {
+      navigate("/products");
+    }
+  }, [items, navigate]);
+
   // Set default address
   useEffect(() => {
     if (addresses && addresses.length > 0) {
-      const defaultAddr = addresses.find(addr => addr.isDefault);
+      const defaultAddr = addresses.find((addr) => addr.isDefault);
       if (defaultAddr) {
         setSelectedAddress(defaultAddr.id);
       } else {
@@ -64,11 +82,13 @@ const Checkout: React.FC = () => {
 
   // Format price
   const formatPrice = (price: number) => {
-    return `Rp ${price.toLocaleString('id-ID')}`;
+    return `Rp ${price.toLocaleString("id-ID")}`;
   };
 
   // Handle guest form change
-  const handleGuestFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleGuestFormChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     setGuestForm({
       ...guestForm,
       [e.target.name]: e.target.value,
@@ -78,25 +98,94 @@ const Checkout: React.FC = () => {
   // Validate guest form
   const validateGuestForm = () => {
     if (!guestForm.name.trim()) {
-      toast.error('Nama harus diisi');
+      toast.error("Nama harus diisi");
       return false;
     }
     if (!guestForm.phone.trim()) {
-      toast.error('No HP harus diisi');
+      toast.error("No HP harus diisi");
       return false;
     }
     if (!guestForm.address.trim()) {
-      toast.error('Alamat harus diisi');
+      toast.error("Alamat harus diisi");
       return false;
     }
     return true;
   };
 
+  // Generate WhatsApp message
+  const generateWAMessage = (transaction: any) => {
+    // Data customer
+    let customerInfo = "";
+    let customerAddress = "";
+
+    if (isGuest) {
+      customerInfo = `Nama: ${guestForm.name}
+No HP: ${guestForm.phone}
+Email: ${guestForm.email || "-"}`;
+      customerAddress = guestForm.address;
+    } else {
+      // Untuk customer login, ambil alamat yang dipilih
+      const selectedAddr = addresses?.find(
+        (addr) => addr.id === selectedAddress,
+      );
+      customerInfo = `Nama: ${user?.name}
+No HP: ${user?.phone}
+Email: ${user?.email}`;
+
+      if (selectedAddr) {
+        customerAddress = `${selectedAddr.address}
+${selectedAddr.district ? selectedAddr.district + ", " : ""}${selectedAddr.city}
+${selectedAddr.province} ${selectedAddr.postalCode || ""}`.trim();
+      } else {
+        customerAddress = "Alamat tidak tersedia";
+      }
+    }
+
+    const itemsList = items
+      .map(
+        (item) =>
+          `- ${item.name} ${item.quantity} x ${formatPrice(item.price)} = ${formatPrice(item.price * item.quantity)}`,
+      )
+      .join("\n");
+
+    const message = `*PESANAN BARU* 🛒
+────────────────
+*Invoice:* ${transaction.invoiceNumber}
+*Tanggal:* ${new Date().toLocaleString("id-ID")}
+*Metode Bayar:* ${paymentMethod === "CASH" ? "🏦 Tunai (Bayar di Toko)" : "📱 Transfer/QRIS (Konfirmasi via WA)"}
+
+*DATA PEMBELI*
+────────────────
+${customerInfo}
+
+*ALAMAT PENGIRIMAN*
+────────────────
+${customerAddress}
+
+*PESANAN*
+────────────────
+${itemsList}
+
+*RINGKASAN*
+────────────────
+Subtotal: ${formatPrice(subtotal)}
+Ongkir: ${formatPrice(shippingCost)}
+*TOTAL: ${formatPrice(total)}*
+
+*STATUS*
+────────────────
+Menunggu konfirmasi pembayaran via WhatsApp
+
+Silakan konfirmasi pesanan ini dengan membalas chat ini.`;
+
+    return encodeURIComponent(message);
+  };
+
   // Handle place order
   const handlePlaceOrder = async () => {
     if (items.length === 0) {
-      toast.error('Keranjang belanja kosong');
-      navigate('/products');
+      toast.error("Keranjang belanja kosong");
+      navigate("/products");
       return;
     }
 
@@ -107,7 +196,7 @@ const Checkout: React.FC = () => {
 
     // Validasi untuk customer
     if (!isGuest && !selectedAddress) {
-      toast.error('Pilih alamat pengiriman');
+      toast.error("Pilih alamat pengiriman");
       return;
     }
 
@@ -116,12 +205,12 @@ const Checkout: React.FC = () => {
     try {
       // Siapkan data transaksi
       const transactionData: any = {
-        items: items.map(item => ({
+        items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
         })),
         paymentMethod: paymentMethod,
-        paymentAmount: getTotal() + 5000, // Total + ongkir
+        paymentAmount: total,
         discount: 0,
       };
 
@@ -136,45 +225,136 @@ const Checkout: React.FC = () => {
         transactionData.customerId = user?.id;
         transactionData.customerName = user?.name;
         transactionData.customerPhone = user?.phone;
-        
-        // Ambil alamat yang dipilih
-        const selectedAddr = addresses?.find(addr => addr.id === selectedAddress);
+
+        const selectedAddr = addresses?.find(
+          (addr) => addr.id === selectedAddress,
+        );
         if (selectedAddr) {
           transactionData.notes = `${selectedAddr.address}, ${selectedAddr.city}, ${selectedAddr.province} ${selectedAddr.postalCode}`;
         }
       }
 
-      // Pilih endpoint berdasarkan tipe user
-      const endpoint = isGuest ? '/transactions' : '/transactions/customer';
-      
+      // Tentukan endpoint
+      const endpoint = isGuest
+        ? "/transactions/guest"
+        : "/transactions/customer";
+
       const response = await api.post(endpoint, transactionData);
-      
-      // Clear cart
-      clearCart();
 
-      // Tampilkan success
-      toast.success('Pesanan berhasil dibuat!');
-      
-      // Redirect ke invoice / success page
-      navigate(`/order-success/${response.data.invoiceNumber}`);
-
+      setCreatedTransaction(response.data);
+      setShowWAPrompt(true);
     } catch (error: any) {
-      console.error('Checkout error:', error);
-      toast.error(error.response?.data?.message || 'Gagal memproses pesanan');
+      console.error("Checkout error:", error);
+      toast.error(error.response?.data?.message || "Gagal memproses pesanan");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Handle WhatsApp redirect
+  const handleWhatsAppRedirect = () => {
+    if (!createdTransaction) return;
+
+    const message = generateWAMessage(createdTransaction);
+    const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${message}`;
+
+    // Buka WhatsApp di tab baru
+    window.open(waUrl, "_blank");
+
+    // Clear cart setelah redirect
+    clearCart();
+
+    // Redirect ke halaman sukses
+    navigate(`/order-success/${createdTransaction.invoiceNumber}`);
+  };
+
+  // Handle bayar nanti
+  const handlePayLater = () => {
+    clearCart();
+    navigate(`/order-success/${createdTransaction.invoiceNumber}`);
   };
 
   // Hitung total
   const subtotal = getTotal();
   const shippingCost = 5000;
   const total = subtotal + shippingCost;
+  const itemCount = getItemCount();
 
-  // Kalau cart kosong, redirect
-  if (items.length === 0) {
-    navigate('/products');
-    return null;
+  // Tampilkan WhatsApp Prompt
+  if (showWAPrompt && createdTransaction) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircleIcon className="h-10 w-10 text-green-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Pesanan Dibuat!
+              </h2>
+              <p className="text-gray-600">
+                Nomor Invoice:{" "}
+                <span className="font-mono font-bold">
+                  {createdTransaction.invoiceNumber}
+                </span>
+              </p>
+            </div>
+
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 mb-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                  <ChatBubbleLeftRightIcon className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg text-gray-900">
+                    Konfirmasi via WhatsApp
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Klik tombol di bawah untuk mengirim pesanan ke admin
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-4 mb-4">
+                <p className="text-sm text-gray-700 whitespace-pre-line">
+                  {generateWAMessage(createdTransaction)
+                    .replace(/%0A/g, "\n")
+                    .replace(/%20/g, " ")}
+                </p>
+              </div>
+
+              <div className="bg-yellow-50 p-4 rounded-xl">
+                <p className="text-sm text-yellow-800 flex items-center gap-2">
+                  <PhoneIcon className="h-5 w-5 flex-shrink-0" />
+                  Admin akan mengkonfirmasi pesanan Anda via WhatsApp
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleWhatsAppRedirect}
+                className="flex-1 bg-green-600 text-white py-4 rounded-xl hover:bg-green-700 transition-colors font-semibold text-lg flex items-center justify-center gap-2"
+              >
+                <ChatBubbleLeftRightIcon className="h-6 w-6" />
+                Chat via WhatsApp
+              </button>
+              <button
+                onClick={handlePayLater}
+                className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl hover:bg-gray-300 transition-colors font-semibold text-lg"
+              >
+                Nanti
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              * Pesanan Anda akan kami proses setelah konfirmasi via WhatsApp
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -205,8 +385,8 @@ const Checkout: React.FC = () => {
                   onClick={() => setIsGuest(true)}
                   className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
                     isGuest
-                      ? 'border-primary-600 bg-primary-50 text-primary-600'
-                      : 'border-gray-200 hover:border-primary-300'
+                      ? "border-primary-600 bg-primary-50 text-primary-600"
+                      : "border-gray-200 hover:border-primary-300"
                   }`}
                 >
                   <span className="font-semibold">Tamu (Guest)</span>
@@ -215,11 +395,11 @@ const Checkout: React.FC = () => {
                   </p>
                 </button>
                 <button
-                  onClick={() => navigate('/customer/login')}
+                  onClick={() => navigate("/customer/login")}
                   className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${
                     !isGuest && !isAuthenticated
-                      ? 'border-primary-600 bg-primary-50 text-primary-600'
-                      : 'border-gray-200 hover:border-primary-300'
+                      ? "border-primary-600 bg-primary-50 text-primary-600"
+                      : "border-gray-200 hover:border-primary-300"
                   }`}
                 >
                   <span className="font-semibold">Customer</span>
@@ -268,7 +448,7 @@ const Checkout: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
+                    Email (Opsional)
                   </label>
                   <input
                     type="email"
@@ -321,8 +501,8 @@ const Checkout: React.FC = () => {
                       key={addr.id}
                       className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
                         selectedAddress === addr.id
-                          ? 'border-primary-600 bg-primary-50'
-                          : 'border-gray-200 hover:border-primary-300'
+                          ? "border-primary-600 bg-primary-50"
+                          : "border-gray-200 hover:border-primary-300"
                       }`}
                     >
                       <div className="flex items-start">
@@ -359,7 +539,9 @@ const Checkout: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 mb-4">Belum ada alamat tersimpan</p>
+                  <p className="text-gray-500 mb-4">
+                    Belum ada alamat tersimpan
+                  </p>
                   <Link
                     to="/customer/addresses"
                     className="text-primary-600 hover:text-primary-700 font-semibold"
@@ -377,32 +559,65 @@ const Checkout: React.FC = () => {
               Metode Pembayaran
             </h2>
             <div className="space-y-3">
-              {[
-                { id: 'CASH', label: 'Tunai', icon: '💵' },
-                { id: 'QRIS', label: 'QRIS', icon: '📱' },
-                { id: 'TRANSFER', label: 'Transfer Bank', icon: '🏦' },
-              ].map((method) => (
-                <label
-                  key={method.id}
-                  className={`flex items-center p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                    paymentMethod === method.id
-                      ? 'border-primary-600 bg-primary-50'
-                      : 'border-gray-200 hover:border-primary-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="paymentMethod"
-                    value={method.id}
-                    checked={paymentMethod === method.id}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="mr-3"
-                  />
-                  <span className="text-2xl mr-3">{method.icon}</span>
-                  <span className="font-semibold">{method.label}</span>
-                </label>
-              ))}
+              <label
+                className={`flex items-center p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                  paymentMethod === "CASH"
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-200 hover:border-primary-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="CASH"
+                  checked={paymentMethod === "CASH"}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="mr-3"
+                />
+                <BanknotesIcon className="h-6 w-6 text-gray-600 mr-3" />
+                <div>
+                  <span className="font-semibold">Tunai</span>
+                  <p className="text-sm text-gray-500">
+                    Bayar langsung di toko
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-center p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                  paymentMethod === "TRANSFER"
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-200 hover:border-primary-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="TRANSFER"
+                  checked={paymentMethod === "TRANSFER"}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="mr-3"
+                />
+                <ChatBubbleLeftRightIcon className="h-6 w-6 text-gray-600 mr-3" />
+                <div>
+                  <span className="font-semibold">Transfer Bank / QRIS</span>
+                  <p className="text-sm text-gray-500">
+                    Konfirmasi via WhatsApp
+                  </p>
+                </div>
+              </label>
             </div>
+
+            {/* Info untuk non-cash */}
+            {paymentMethod !== "CASH" && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-xl">
+                <p className="text-sm text-blue-800 flex items-center gap-2">
+                  <ChatBubbleLeftRightIcon className="h-5 w-5 flex-shrink-0" />
+                  Setelah checkout, Anda akan diarahkan ke WhatsApp untuk
+                  konfirmasi pesanan.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -416,7 +631,10 @@ const Checkout: React.FC = () => {
             {/* Order Items */}
             <div className="max-h-64 overflow-y-auto mb-4 space-y-3">
               {items.map((item) => (
-                <div key={item.productId} className="flex justify-between text-sm">
+                <div
+                  key={item.productId}
+                  className="flex justify-between text-sm"
+                >
                   <span className="text-gray-600">
                     {item.name} x {item.quantity}
                   </span>
@@ -429,12 +647,14 @@ const Checkout: React.FC = () => {
 
             <div className="border-t border-gray-200 pt-4 space-y-3">
               <div className="flex justify-between text-gray-600">
-                <span>Subtotal</span>
+                <span>Subtotal ({itemCount} item)</span>
                 <span className="font-semibold">{formatPrice(subtotal)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Ongkos Kirim</span>
-                <span className="font-semibold">{formatPrice(shippingCost)}</span>
+                <span className="font-semibold">
+                  {formatPrice(shippingCost)}
+                </span>
               </div>
               <div className="flex justify-between text-lg font-bold text-gray-900 pt-3 border-t border-gray-200">
                 <span>Total</span>
@@ -450,7 +670,10 @@ const Checkout: React.FC = () => {
             >
               {isProcessing ? (
                 <span className="flex items-center justify-center">
-                  <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                  <svg
+                    className="animate-spin h-5 w-5 mr-3"
+                    viewBox="0 0 24 24"
+                  >
                     <circle
                       className="opacity-25"
                       cx="12"
@@ -469,12 +692,13 @@ const Checkout: React.FC = () => {
                   Memproses...
                 </span>
               ) : (
-                'Buat Pesanan'
+                "Buat Pesanan"
               )}
             </button>
 
             <p className="text-xs text-gray-500 text-center mt-4">
-              Dengan membuat pesanan, Anda menyetujui Syarat & Ketentuan yang berlaku
+              Dengan membuat pesanan, Anda menyetujui Syarat & Ketentuan yang
+              berlaku
             </p>
           </div>
         </div>
