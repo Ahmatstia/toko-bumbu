@@ -22,14 +22,13 @@ import { Public } from '../../common/decorators/public.decorator';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  // ========== ROUTE SPESIFIK (Tempatkan PALING ATAS) ==========
+  @Get('top')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
+  async getTopProducts(@Query('limit') limit?: string) {
+    return this.productsService.getTopProducts(limit ? parseInt(limit) : 5);
   }
 
-  // ENDPOINT UNTUK PUBLIC (hanya produk aktif)
   @Get('public')
   @Public()
   async findAllPublic(
@@ -46,7 +45,21 @@ export class ProductsController {
     );
   }
 
-  // ENDPOINT UNTUK ADMIN (bisa filter isActive)
+  @Get('all/dropdown')
+  @Public()
+  async findAllForDropdown() {
+    return this.productsService.findAllForDropdown();
+  }
+
+  // ========== CREATE ==========
+  @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  create(@Body() createProductDto: CreateProductDto) {
+    return this.productsService.create(createProductDto);
+  }
+
+  // ========== LIST ENDPOINTS (Tempatkan SETELAH route spesifik) ==========
   @Get()
   @Public()
   async findAll(
@@ -58,7 +71,6 @@ export class ProductsController {
     @Query('isPublic') isPublic?: string,
   ) {
     const isActiveBool = isActive === 'true' ? true : isActive === 'false' ? false : undefined;
-
     const isPublicBool = isPublic === 'true';
 
     return this.productsService.findAll(
@@ -71,13 +83,7 @@ export class ProductsController {
     );
   }
 
-  // ENDPOINT UNTUK DROPDOWN (semua produk)
-  @Get('all/dropdown')
-  @Public()
-  async findAllForDropdown() {
-    return this.productsService.findAllForDropdown();
-  }
-
+  // ========== DETAIL ENDPOINTS (Tempatkan PALING BAWAH) ==========
   @Get(':id')
   @Public()
   findOne(@Param('id') id: string) {

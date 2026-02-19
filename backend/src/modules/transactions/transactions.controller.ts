@@ -23,8 +23,65 @@ import { Public } from '../../common/decorators/public.decorator';
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
-  // ========== PUBLIC ENDPOINTS ==========
+  // ========== PUBLIC ENDPOINTS (Tempatkan PALING ATAS) ==========
+  @Get('weekly')
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async getWeeklySales() {
+    return this.transactionsService.getWeeklySales();
+  }
 
+  @Get('monthly')
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async getMonthlySales() {
+    return this.transactionsService.getMonthlySales();
+  }
+
+  @Get('payment-methods')
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async getPaymentMethods() {
+    return this.transactionsService.getPaymentMethods();
+  }
+
+  @Get('today')
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async getTodaySales() {
+    return this.transactionsService.getTodaySales();
+  }
+
+  @Get('customer/history')
+  @UseGuards(CustomerJwtGuard)
+  async getCustomerTransactions(@Request() req) {
+    return this.transactionsService.findByCustomer(req.user.id);
+  }
+
+  @Get('status/:invoiceNumber')
+  @Public()
+  async getStatus(@Param('invoiceNumber') invoiceNumber: string) {
+    const transaction = await this.transactionsService.findByInvoice(invoiceNumber);
+    return {
+      invoiceNumber: transaction.invoiceNumber,
+      status: transaction.status,
+      total: transaction.total,
+      paymentMethod: transaction.paymentMethod,
+      createdAt: transaction.createdAt,
+      expiresAt: transaction.expiresAt,
+    };
+  }
+
+  @Get('invoice/:invoiceNumber')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async findByInvoice(@Param('invoiceNumber') invoiceNumber: string) {
+    return this.transactionsService.findByInvoice(invoiceNumber);
+  }
+
+  @Get('availability/:productId')
+  @Public()
+  async checkAvailability(@Param('productId') productId: string) {
+    return this.transactionsService.checkAvailability(productId);
+  }
+
+  // ========== CREATE ENDPOINTS ==========
   @Post('guest')
   @Public()
   async createGuest(@Body() createTransactionDto: CreateTransactionDto) {
@@ -51,35 +108,6 @@ export class TransactionsController {
     return this.transactionsService.create(createTransactionDto, undefined);
   }
 
-  // ========== ENDPOINT CEK KETERSEDIAAN STOK ==========
-  @Get('availability/:productId')
-  @Public()
-  async checkAvailability(@Param('productId') productId: string) {
-    return this.transactionsService.checkAvailability(productId);
-  }
-
-  // ========== PUBLIC CHECK STATUS ==========
-  @Get('status/:invoiceNumber')
-  @Public()
-  async getStatus(@Param('invoiceNumber') invoiceNumber: string) {
-    const transaction = await this.transactionsService.findByInvoice(invoiceNumber);
-    return {
-      invoiceNumber: transaction.invoiceNumber,
-      status: transaction.status,
-      total: transaction.total,
-      paymentMethod: transaction.paymentMethod,
-      createdAt: transaction.createdAt,
-      expiresAt: transaction.expiresAt,
-    };
-  }
-
-  // ========== CUSTOMER ENDPOINTS ==========
-  @Get('customer/history')
-  @UseGuards(CustomerJwtGuard)
-  async getCustomerTransactions(@Request() req) {
-    return this.transactionsService.findByCustomer(req.user.id);
-  }
-
   // ========== ADMIN ENDPOINTS ==========
   @Post(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -104,6 +132,7 @@ export class TransactionsController {
     return this.transactionsService.updateStatus(id, status);
   }
 
+  // ========== LIST ENDPOINTS (Tempatkan SETELAH route spesifik) ==========
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
@@ -127,20 +156,7 @@ export class TransactionsController {
     );
   }
 
-  @Get('today')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async getTodaySales() {
-    return this.transactionsService.getTodaySales();
-  }
-
-  @Get('invoice/:invoiceNumber')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async findByInvoice(@Param('invoiceNumber') invoiceNumber: string) {
-    return this.transactionsService.findByInvoice(invoiceNumber);
-  }
-
+  // ========== DETAIL ENDPOINTS (Tempatkan PALING BAWAH) ==========
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
@@ -148,7 +164,7 @@ export class TransactionsController {
     return this.transactionsService.findOne(id);
   }
 
-  // ========== CRON JOB (panggil manual) ==========
+  // ========== CRON JOB ==========
   @Post('cron/expired')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER)

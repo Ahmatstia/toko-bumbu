@@ -9,7 +9,7 @@ import { Stock } from '../inventory/entities/stock.entity';
 import { Inventory, InventoryType } from '../inventory/entities/inventory.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
-
+import { subDays } from 'date-fns';
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -205,6 +205,74 @@ export class TransactionsService {
     return reservations;
   }
 
+  async getWeeklySales() {
+    const endDate = new Date();
+    const startDate = subDays(endDate, 7);
+
+    const sales = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select('DATE(transaction.createdAt)', 'date')
+      .addSelect('SUM(transaction.total)', 'total')
+      .where('transaction.createdAt BETWEEN :start AND :end', { start: startDate, end: endDate })
+      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
+      .groupBy('DATE(transaction.createdAt)')
+      .orderBy('date', 'ASC')
+      .getRawMany();
+
+    // Generate last 7 days
+    const result: { date: string; total: number }[] = []; // <-- TAMBAHKAN TYPE
+    for (let i = 0; i < 7; i++) {
+      const date = subDays(endDate, 6 - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const sale = sales.find((s) => s.date === dateStr);
+      result.push({
+        date: dateStr,
+        total: sale ? parseFloat(sale.total) : 0,
+      });
+    }
+
+    return result;
+  }
+
+  async getMonthlySales() {
+    const endDate = new Date();
+    const startDate = subDays(endDate, 30);
+
+    const sales = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select('WEEK(transaction.createdAt)', 'week')
+      .addSelect('MIN(transaction.createdAt)', 'startDate')
+      .addSelect('SUM(transaction.total)', 'total')
+      .where('transaction.createdAt BETWEEN :start AND :end', { start: startDate, end: endDate })
+      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
+      .groupBy('WEEK(transaction.createdAt)')
+      .orderBy('week', 'ASC')
+      .getRawMany();
+
+    const result: { week: string; total: number }[] = []; // <-- TAMBAHKAN TYPE
+    for (let i = 0; i < sales.length; i++) {
+      result.push({
+        week: `Week ${i + 1}`,
+        total: parseFloat(sales[i].total),
+      });
+    }
+
+    return result;
+  }
+
+  async getPaymentMethods() {
+    const methods = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select('transaction.paymentMethod', 'method')
+      .addSelect('COUNT(transaction.id)', 'count')
+      .addSelect('SUM(transaction.total)', 'total')
+      .where('transaction.status = :status', { status: TransactionStatus.COMPLETED })
+      .groupBy('transaction.paymentMethod')
+      .getRawMany();
+
+    return methods;
+  }
+
   // Buat transaksi baru (HANYA RESERVASI, TIDAK KURANGI STOK)
   async create(createTransactionDto: CreateTransactionDto, userId?: string) {
     console.log('=== CREATE TRANSACTION START ===');
@@ -312,20 +380,33 @@ export class TransactionsService {
 
   async confirmPayment(transactionId: string, adminId: string) {
     console.log('========== CONFIRM PAYMENT ==========');
-    console.log(`Transaction ID: ${transactionId}`);
+    console.log(`Transaction ID: ${transactionId}, Admin: ${adminId}`);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // 1. AMBIL RESERVASI PAKAI QUERY BUILDER
-      const reservations = await queryRunner.manager
-        .createQueryBuilder(Reservation, 'r')
-        .where('r.transactionId = :transactionId', { transactionId })
-        .andWhere('r.status = :status', { status: 'ACTIVE' })
-        .leftJoinAndSelect('r.stock', 'stock')
-        .getMany();
+      // 1. Cek apakah transaksi ada dan masih PENDING
+      const transaction = await queryRunner.manager.query(
+        `SELECT * FROM transactions WHERE id = ? AND status = ?`,
+        [transactionId, 'PENDING'],
+      );
+
+      if (!transaction || transaction.length === 0) {
+        throw new BadRequestException('Transaksi tidak ditemukan atau sudah diproses');
+      }
+
+      // 2. Ambil semua reservasi aktif
+      const reservations = await queryRunner.manager.query(
+        `SELECT r.*, s.quantity as stock_quantity, s.batch_code, s.expiry_date, 
+              s.purchase_price, s.selling_price, p.name as product_name
+       FROM reservations r
+       JOIN stocks s ON s.id = r.stock_id
+       JOIN products p ON p.id = r.product_id
+       WHERE r.transaction_id = ? AND r.status = ?`,
+        [transactionId, 'ACTIVE'],
+      );
 
       console.log(`Found ${reservations.length} reservations`);
 
@@ -333,44 +414,69 @@ export class TransactionsService {
         throw new Error('No active reservations found');
       }
 
-      // 2. KURANGI STOK
+      // 3. KURANGI STOK dan UPDATE RESERVASI untuk setiap item
       for (const res of reservations) {
-        console.log(`Updating stock ${res.stockId}, quantity ${res.quantity}`);
+        console.log(`Updating stock ${res.stock_id}, quantity ${res.quantity}`);
 
-        const updateResult = await queryRunner.manager
-          .createQueryBuilder()
-          .update(Stock)
-          .set({ quantity: () => `quantity - ${res.quantity}` })
-          .where('id = :id', { id: res.stockId })
-          .execute();
+        // Update stok - kurangi quantity
+        const updateResult = await queryRunner.manager.query(
+          `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
+          [res.quantity, res.stock_id, res.quantity],
+        );
 
-        console.log(`Stock updated: ${updateResult.affected} rows`);
+        if (updateResult.affectedRows === 0) {
+          throw new Error(`Gagal mengurangi stok ${res.stock_id}. Stok mungkin tidak cukup.`);
+        }
 
-        // 3. UPDATE RESERVASI
-        await queryRunner.manager
-          .createQueryBuilder()
-          .update(Reservation)
-          .set({
-            status: 'CONFIRMED',
-            confirmedAt: new Date(),
-          })
-          .where('id = :id', { id: res.id })
-          .execute();
+        // Update status reservasi menjadi CONFIRMED
+        await queryRunner.manager.query(
+          `UPDATE reservations 
+         SET status = ?, confirmed_at = NOW() 
+         WHERE id = ?`,
+          ['CONFIRMED', res.id],
+        );
+
+        // Catat ke inventory
+        await queryRunner.manager.query(
+          `INSERT INTO inventory (
+          id, product_id, type, quantity, stock_before, stock_after, 
+          batch_code, expiry_date, purchase_price, selling_price, 
+          user_id, notes, reference_id, created_at, updated_at
+        ) VALUES (
+          UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
+        )`,
+          [
+            res.product_id,
+            'SALE', // atau 'OUT' jika belum ada enum SALE
+            -res.quantity,
+            res.stock_quantity, // stock before
+            res.stock_quantity - res.quantity, // stock after
+            res.batch_code,
+            res.expiry_date,
+            res.purchase_price,
+            res.selling_price,
+            adminId || null,
+            `Transaksi ${transaction[0].invoice_number}`,
+            transactionId,
+          ],
+        );
       }
 
-      // 4. UPDATE TRANSAKSI
-      await queryRunner.manager
-        .createQueryBuilder()
-        .update(Transaction)
-        .set({ status: 'COMPLETED' })
-        .where('id = :id', { id: transactionId })
-        .execute();
+      // 4. Update status transaksi menjadi COMPLETED
+      await queryRunner.manager.query(`UPDATE transactions SET status = ? WHERE id = ?`, [
+        'COMPLETED',
+        transactionId,
+      ]);
 
       await queryRunner.commitTransaction();
       console.log('✅ SUCCESS');
+
+      // Kembalikan data transaksi terbaru
+      return this.findOne(transactionId);
     } catch (error) {
       console.error('❌ ERROR:', error);
       await queryRunner.rollbackTransaction();
+      throw error;
     } finally {
       await queryRunner.release();
     }

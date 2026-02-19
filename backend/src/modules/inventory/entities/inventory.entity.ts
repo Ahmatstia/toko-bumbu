@@ -13,6 +13,7 @@ import { User } from '../../users/entities/user.entity';
 export enum InventoryType {
   IN = 'IN',
   OUT = 'OUT',
+  SALE = 'SALE',
   ADJUSTMENT = 'ADJUSTMENT',
   EXPIRED = 'EXPIRED',
   RETURN = 'RETURN',

@@ -11,6 +11,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 // Entities (untuk TypeORM)
 import { User } from './modules/users/entities/user.entity';
@@ -69,6 +70,7 @@ import { TransactionCron } from './modules/transactions/cron/transaction.cron';
     InventoryModule,
     TransactionsModule,
     CustomersModule,
+    AdminModule,
   ],
   providers: [TransactionCron],
 })

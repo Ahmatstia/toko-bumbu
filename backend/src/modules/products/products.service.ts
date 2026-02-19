@@ -155,6 +155,23 @@ export class ProductsService {
     return product;
   }
 
+  async getTopProducts(limit: number = 5) {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoin('transaction_items', 'item', 'item.productId = product.id')
+      .select('product.id', 'id')
+      .addSelect('product.name', 'name')
+      .addSelect('product.image_url', 'image')
+      .addSelect('SUM(item.quantity)', 'sold')
+      .addSelect('SUM(item.subtotal)', 'revenue')
+      .groupBy('product.id')
+      .orderBy('sold', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    return products;
+  }
+
   async update(id: string, updateProductDto: UpdateProductDto) {
     const product = await this.findOne(id);
 
