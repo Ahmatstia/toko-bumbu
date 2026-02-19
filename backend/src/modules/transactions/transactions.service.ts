@@ -387,15 +387,18 @@ export class TransactionsService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Cek apakah transaksi ada dan masih PENDING
-      const transaction = await queryRunner.manager.query(
-        `SELECT * FROM transactions WHERE id = ? AND status = ?`,
-        [transactionId, 'PENDING'],
+      // 1. Cek apakah transaksi ada dan status PENDING atau PROCESSING
+      const transactions = await queryRunner.manager.query(
+        `SELECT * FROM transactions WHERE id = ? AND status IN (?, ?)`,
+        [transactionId, 'PENDING', 'PROCESSING'],
       );
 
-      if (!transaction || transaction.length === 0) {
+      if (!transactions || transactions.length === 0) {
         throw new BadRequestException('Transaksi tidak ditemukan atau sudah diproses');
       }
+
+      const transaction = transactions[0];
+      console.log('Transaction found:', transaction.invoice_number);
 
       // 2. Ambil semua reservasi aktif
       const reservations = await queryRunner.manager.query(
@@ -411,12 +414,17 @@ export class TransactionsService {
       console.log(`Found ${reservations.length} reservations`);
 
       if (reservations.length === 0) {
-        throw new Error('No active reservations found');
+        throw new Error('Tidak ada reservasi aktif ditemukan untuk transaksi ini');
       }
 
       // 3. KURANGI STOK dan UPDATE RESERVASI untuk setiap item
       for (const res of reservations) {
         console.log(`Updating stock ${res.stock_id}, quantity ${res.quantity}`);
+
+        // Validasi stock_quantity
+        if (res.stock_quantity === undefined || res.stock_quantity === null) {
+          throw new Error(`Stock quantity not found for stock ID: ${res.stock_id}`);
+        }
 
         // Update stok - kurangi quantity
         const updateResult = await queryRunner.manager.query(
@@ -424,7 +432,10 @@ export class TransactionsService {
           [res.quantity, res.stock_id, res.quantity],
         );
 
-        if (updateResult.affectedRows === 0) {
+        // Di MySQL, affectedRows ada di result[0]?.affectedRows atau result.affectedRows
+        const affectedRows = updateResult.affectedRows || updateResult[0]?.affectedRows || 0;
+
+        if (affectedRows === 0) {
           throw new Error(`Gagal mengurangi stok ${res.stock_id}. Stok mungkin tidak cukup.`);
         }
 
@@ -436,27 +447,28 @@ export class TransactionsService {
           ['CONFIRMED', res.id],
         );
 
-        // Catat ke inventory
+        // Catat ke inventory - gunakan UUID() atau generate UUID di JavaScript
+        const inventoryId = require('uuid').v4(); // atau gunakan crypto.randomUUID()
+
         await queryRunner.manager.query(
           `INSERT INTO inventory (
-          id, product_id, type, quantity, stock_before, stock_after, 
-          batch_code, expiry_date, purchase_price, selling_price, 
-          user_id, notes, reference_id, created_at, updated_at
-        ) VALUES (
-          UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
-        )`,
+    id, product_id, type, quantity, stock_before, stock_after, 
+    batch_code, expiry_date, purchase_price, selling_price, 
+    user_id, notes, reference_id, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
+            inventoryId,
             res.product_id,
-            'SALE', // atau 'OUT' jika belum ada enum SALE
+            'OUT', // <-- UBAH DARI 'SALE' MENJADI 'OUT'
             -res.quantity,
-            res.stock_quantity, // stock before
-            res.stock_quantity - res.quantity, // stock after
+            res.stock_quantity,
+            res.stock_quantity - res.quantity,
             res.batch_code,
             res.expiry_date,
             res.purchase_price,
             res.selling_price,
             adminId || null,
-            `Transaksi ${transaction[0].invoice_number}`,
+            `Transaksi ${transaction.invoice_number}`,
             transactionId,
           ],
         );
@@ -474,9 +486,9 @@ export class TransactionsService {
       // Kembalikan data transaksi terbaru
       return this.findOne(transactionId);
     } catch (error) {
-      console.error('❌ ERROR:', error);
+      console.error('❌ ERROR DETAIL:', error);
       await queryRunner.rollbackTransaction();
-      throw error;
+      throw error; // Ini akan menyebabkan response 500
     } finally {
       await queryRunner.release();
     }

@@ -32,6 +32,8 @@ const Transactions: React.FC = () => {
     useState<Transaction | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showWAModal, setShowWAModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [waMessage, setWaMessage] = useState("");
 
   const queryClient = useQueryClient();
@@ -57,7 +59,7 @@ const Transactions: React.FC = () => {
     },
   });
 
-  // Update status mutation
+  // Update status mutation (hanya untuk PROCESSING)
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const response = await api.patch(`/transactions/${id}/status`, {
@@ -72,6 +74,44 @@ const Transactions: React.FC = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || "Gagal update status");
+    },
+  });
+
+  // Confirm payment mutation (POST /transactions/:id/confirm)
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/transactions/${id}/confirm`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      setShowDetailModal(false);
+      toast.success("Pembayaran dikonfirmasi, stok telah berkurang");
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Gagal konfirmasi pembayaran",
+      );
+    },
+  });
+
+  // Cancel transaction mutation (POST /transactions/:id/cancel)
+  const cancelTransactionMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const response = await api.post(`/transactions/${id}/cancel`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      setShowDetailModal(false);
+      setShowCancelModal(false);
+      setCancelReason("");
+      toast.success("Transaksi dibatalkan");
+    },
+    onError: (error: any) => {
+      toast.error(
+        error.response?.data?.message || "Gagal membatalkan transaksi",
+      );
     },
   });
 
@@ -113,7 +153,7 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
     setShowWAModal(false);
   };
 
-  // Handle update status
+  // Handle update status (hanya untuk PROCESSING)
   const handleUpdateStatus = (status: string) => {
     if (selectedTransaction) {
       updateStatusMutation.mutate({ id: selectedTransaction.id, status });
@@ -412,27 +452,74 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                 <div className="pt-4 border-t border-gray-200">
                   <p className="font-semibold mb-3">Update Status</p>
                   <div className="flex flex-wrap gap-2">
+                    {/* Tombol Proses (PENDING → PROCESSING) - OPSIONAL */}
+                    {selectedTransaction.paymentMethod === "TRANSFER" && (
+                      <button
+                        onClick={() => handleUpdateStatus("PROCESSING")}
+                        disabled={
+                          selectedTransaction.status !== "PENDING" ||
+                          updateStatusMutation.isPending
+                        }
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      >
+                        <ClockIcon className="h-5 w-5" />
+                        Proses
+                      </button>
+                    )}
+
+                    {/* Tombol Konfirmasi Pembayaran (PENDING atau PROCESSING → COMPLETED) */}
                     <button
-                      onClick={() => handleUpdateStatus("PROCESSING")}
-                      disabled={selectedTransaction.status !== "PENDING"}
-                      className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      <ClockIcon className="h-5 w-5" />
-                      Proses
-                    </button>
-                    <button
-                      onClick={() => handleUpdateStatus("COMPLETED")}
-                      disabled={selectedTransaction.status !== "PROCESSING"}
+                      onClick={() =>
+                        confirmPaymentMutation.mutate(selectedTransaction.id)
+                      }
+                      disabled={
+                        (selectedTransaction.status !== "PENDING" &&
+                          selectedTransaction.status !== "PROCESSING") ||
+                        confirmPaymentMutation.isPending
+                      }
                       className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                     >
-                      <CheckCircleIcon className="h-5 w-5" />
-                      Selesai
+                      {confirmPaymentMutation.isPending ? (
+                        <span className="flex items-center gap-2">
+                          <svg
+                            className="animate-spin h-5 w-5"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              fill="none"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            />
+                          </svg>
+                          Memproses...
+                        </span>
+                      ) : (
+                        <>
+                          <CheckCircleIcon className="h-5 w-5" />
+                          Konfirmasi Pembayaran
+                        </>
+                      )}
                     </button>
+
+                    {/* Tombol Batalkan */}
                     <button
-                      onClick={() => handleUpdateStatus("CANCELLED")}
+                      onClick={() => {
+                        setCancelReason("");
+                        setShowCancelModal(true);
+                      }}
                       disabled={
                         selectedTransaction.status === "COMPLETED" ||
-                        selectedTransaction.status === "CANCELLED"
+                        selectedTransaction.status === "CANCELLED" ||
+                        cancelTransactionMutation.isPending
                       }
                       className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                     >
@@ -485,6 +572,59 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                 </button>
                 <button
                   onClick={() => setShowWAModal(false)}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {showCancelModal && selectedTransaction && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full">
+            <div className="p-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">
+                Batalkan Transaksi
+              </h3>
+              <p className="text-gray-600 mb-4">
+                Masukkan alasan pembatalan untuk transaksi{" "}
+                {selectedTransaction.invoiceNumber}
+              </p>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Alasan pembatalan..."
+              />
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    if (!cancelReason.trim()) {
+                      toast.error("Alasan pembatalan harus diisi");
+                      return;
+                    }
+                    cancelTransactionMutation.mutate({
+                      id: selectedTransaction.id,
+                      reason: cancelReason,
+                    });
+                  }}
+                  disabled={cancelTransactionMutation.isPending}
+                  className="flex-1 bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 transition-colors font-semibold disabled:opacity-50"
+                >
+                  {cancelTransactionMutation.isPending
+                    ? "Memproses..."
+                    : "Ya, Batalkan"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setCancelReason("");
+                  }}
                   className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
                 >
                   Batal
