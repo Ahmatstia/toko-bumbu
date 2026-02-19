@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -23,11 +23,49 @@ interface Transaction {
   createdAt: string;
 }
 
+interface Meta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+interface TransactionsResponse {
+  data: Transaction[];
+  meta: Meta;
+}
+
 const Transactions: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+
+  // Infinite scroll states
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [totalData, setTotalData] = useState(0);
+
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastTransactionRef = useCallback(
+    (node: HTMLDivElement) => {
+      if (isLoadingMore) return;
+      if (observer.current) observer.current.disconnect();
+
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMoreTransactions();
+        }
+      });
+
+      if (node) observer.current.observe(node);
+    },
+    [isLoadingMore, hasMore],
+  );
+
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -38,26 +76,94 @@ const Transactions: React.FC = () => {
 
   const queryClient = useQueryClient();
 
-  // Fetch transactions
-  const { data, isLoading } = useQuery({
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setAllTransactions([]);
+    setPage(1);
+    setHasMore(true);
+  }, [statusFilter, methodFilter, dateFilter, debouncedSearch]);
+
+  // Fetch transactions with current page
+  const {
+    data,
+    isLoading: initialLoading,
+    refetch,
+  } = useQuery<TransactionsResponse>({
     queryKey: [
       "admin-transactions",
       statusFilter,
       methodFilter,
       dateFilter,
-      searchTerm,
+      debouncedSearch,
+      page, // Page sekarang dinamis
     ],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (statusFilter) params.append("status", statusFilter);
       if (methodFilter) params.append("paymentMethod", methodFilter);
       if (dateFilter) params.append("startDate", dateFilter);
-      if (searchTerm) params.append("search", searchTerm);
+      if (debouncedSearch) params.append("search", debouncedSearch);
+      params.append("page", page.toString());
+      params.append("limit", "20");
+
+      console.log("Fetching page:", page, "with filters:", {
+        status: statusFilter,
+        method: methodFilter,
+        date: dateFilter,
+        search: debouncedSearch,
+      });
 
       const response = await api.get(`/transactions?${params.toString()}`);
       return response.data;
     },
   });
+
+  // Handle data changes
+  useEffect(() => {
+    if (data) {
+      if (page === 1) {
+        // Jika page 1, replace data
+        setAllTransactions(data.data || []);
+        console.log("Page 1 data:", data.data?.length);
+      } else {
+        // Jika page > 1, append data
+        setAllTransactions((prev) => {
+          const newData = [...prev, ...(data.data || [])];
+          console.log("Appending page", page, "total now:", newData.length);
+          return newData;
+        });
+      }
+
+      setTotalData(data.meta?.total || 0);
+      setHasMore(page < data.meta?.totalPages);
+    }
+  }, [data, page]);
+
+  // Load more transactions (infinite scroll)
+  const loadMoreTransactions = useCallback(() => {
+    if (isLoadingMore || !hasMore) return;
+
+    console.log("Loading more... Next page:", page + 1);
+    setIsLoadingMore(true);
+    setPage((prev) => prev + 1);
+  }, [isLoadingMore, hasMore, page]);
+
+  // Reset to page 1 when refetch is called
+  const handleRefetch = useCallback(() => {
+    setPage(1);
+    setAllTransactions([]);
+    setHasMore(true);
+    refetch();
+  }, [refetch]);
 
   // Update status mutation (hanya untuk PROCESSING)
   const updateStatusMutation = useMutation({
@@ -68,7 +174,7 @@ const Transactions: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      handleRefetch();
       setShowDetailModal(false);
       toast.success("Status transaksi berhasil diupdate");
     },
@@ -84,7 +190,7 @@ const Transactions: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      handleRefetch();
       setShowDetailModal(false);
       toast.success("Pembayaran dikonfirmasi, stok telah berkurang");
     },
@@ -102,7 +208,7 @@ const Transactions: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-transactions"] });
+      handleRefetch();
       setShowDetailModal(false);
       setShowCancelModal(false);
       setCancelReason("");
@@ -160,6 +266,37 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
     }
   };
 
+  // Handle filter change
+  const handleStatusFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    setStatusFilter(e.target.value);
+  };
+
+  const handleMethodFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    setMethodFilter(e.target.value);
+  };
+
+  const handleDateFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDateFilter(e.target.value);
+  };
+
+  // Handle search
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
+  // Handle clear filters
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setDebouncedSearch("");
+    setStatusFilter("");
+    setMethodFilter("");
+    setDateFilter("");
+  };
+
   // Format price
   const formatPrice = (price: number) => {
     return `Rp ${price.toLocaleString("id-ID")}`;
@@ -192,8 +329,8 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
     }
   };
 
-  const transactions = data?.data || [];
-  const meta = data?.meta;
+  const isLoading =
+    initialLoading && page === 1 && allTransactions.length === 0;
 
   if (isLoading) {
     return (
@@ -206,13 +343,22 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">
-          Manajemen Transaksi
-        </h1>
-        <p className="text-gray-600 mt-1">
-          Kelola dan verifikasi transaksi pelanggan
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Manajemen Transaksi
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Kelola dan verifikasi transaksi pelanggan
+          </p>
+        </div>
+        {/* Total Data Badge */}
+        {totalData > 0 && (
+          <div className="bg-primary-50 border-2 border-primary-200 rounded-xl px-4 py-2">
+            <p className="text-sm text-gray-600">Total Transaksi</p>
+            <p className="text-2xl font-bold text-primary-600">{totalData}</p>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -223,9 +369,9 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Cari invoice/nama..."
+              placeholder="Cari invoice/nama/phone..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
@@ -233,7 +379,7 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
           {/* Status Filter */}
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={handleStatusFilterChange}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           >
             <option value="">Semua Status</option>
@@ -246,7 +392,7 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
           {/* Payment Method Filter */}
           <select
             value={methodFilter}
-            onChange={(e) => setMethodFilter(e.target.value)}
+            onChange={handleMethodFilterChange}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           >
             <option value="">Semua Metode</option>
@@ -258,10 +404,26 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
           <input
             type="date"
             value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
+            onChange={handleDateFilterChange}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
+      </div>
+
+      {/* Results Info */}
+      <div className="flex justify-between items-center px-4">
+        <p className="text-sm text-gray-600">
+          Menampilkan {allTransactions.length} dari {totalData} transaksi
+        </p>
+        {(statusFilter || methodFilter || dateFilter || searchTerm) && (
+          <button
+            onClick={handleClearFilters}
+            className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+          >
+            <FunnelIcon className="h-4 w-4" />
+            Hapus Filter
+          </button>
+        )}
       </div>
 
       {/* Transactions Table */}
@@ -294,98 +456,158 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
               </tr>
             </thead>
             <tbody>
-              {transactions.length === 0 ? (
+              {allTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-8 text-gray-500">
                     Tidak ada transaksi
                   </td>
                 </tr>
               ) : (
-                transactions.map((trx: Transaction) => (
-                  <tr
-                    key={trx.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="py-4 px-6 font-mono text-sm">
-                      {trx.invoiceNumber}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div>
-                        <p className="font-medium">{trx.customerName}</p>
-                        <p className="text-sm text-gray-500">
-                          {trx.customerPhone}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-sm">
-                      {formatDate(trx.createdAt)}
-                    </td>
-                    <td className="py-4 px-6 font-semibold">
-                      {formatPrice(trx.total)}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          trx.paymentMethod === "CASH"
-                            ? "bg-green-100 text-green-600"
-                            : "bg-blue-100 text-blue-600"
-                        }`}
+                allTransactions.map((trx: Transaction, index) => {
+                  // Untuk infinite scroll, tambahkan ref ke item terakhir
+                  if (allTransactions.length === index + 1) {
+                    return (
+                      <tr
+                        ref={lastTransactionRef as any}
+                        key={trx.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
                       >
-                        {trx.paymentMethod}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(trx.status)}`}
+                        <td className="py-4 px-6 font-mono text-sm">
+                          {trx.invoiceNumber}
+                        </td>
+                        <td className="py-4 px-6">
+                          <div>
+                            <p className="font-medium">{trx.customerName}</p>
+                            <p className="text-sm text-gray-500">
+                              {trx.customerPhone}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-sm">
+                          {formatDate(trx.createdAt)}
+                        </td>
+                        <td className="py-4 px-6 font-semibold">
+                          {formatPrice(trx.total)}
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              trx.paymentMethod === "CASH"
+                                ? "bg-green-100 text-green-600"
+                                : "bg-blue-100 text-blue-600"
+                            }`}
+                          >
+                            {trx.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(trx.status)}`}
+                          >
+                            {trx.status}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleViewDetail(trx)}
+                              className="text-primary-600 hover:text-primary-700 text-sm"
+                            >
+                              Detail
+                            </button>
+                            <button
+                              onClick={() => handleWhatsApp(trx)}
+                              className="text-green-600 hover:text-green-700 text-sm"
+                            >
+                              WA
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  } else {
+                    return (
+                      <tr
+                        key={trx.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
                       >
-                        {trx.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleViewDetail(trx)}
-                          className="text-primary-600 hover:text-primary-700 text-sm"
-                        >
-                          Detail
-                        </button>
-                        <button
-                          onClick={() => handleWhatsApp(trx)}
-                          className="text-green-600 hover:text-green-700 text-sm"
-                        >
-                          WA
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        <td className="py-4 px-6 font-mono text-sm">
+                          {trx.invoiceNumber}
+                        </td>
+                        <td className="py-4 px-6">
+                          <div>
+                            <p className="font-medium">{trx.customerName}</p>
+                            <p className="text-sm text-gray-500">
+                              {trx.customerPhone}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-sm">
+                          {formatDate(trx.createdAt)}
+                        </td>
+                        <td className="py-4 px-6 font-semibold">
+                          {formatPrice(trx.total)}
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              trx.paymentMethod === "CASH"
+                                ? "bg-green-100 text-green-600"
+                                : "bg-blue-100 text-blue-600"
+                            }`}
+                          >
+                            {trx.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(trx.status)}`}
+                          >
+                            {trx.status}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleViewDetail(trx)}
+                              className="text-primary-600 hover:text-primary-700 text-sm"
+                            >
+                              Detail
+                            </button>
+                            <button
+                              onClick={() => handleWhatsApp(trx)}
+                              className="text-green-600 hover:text-green-700 text-sm"
+                            >
+                              WA
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
-        {meta && meta.totalPages > 1 && (
-          <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              Menampilkan {meta.page} dari {meta.totalPages} halaman
-            </p>
-            <div className="flex gap-2">
-              <button
-                disabled={meta.page === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                disabled={meta.page === meta.totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+        {/* Loading indicator */}
+        {isLoadingMore && (
+          <div className="flex justify-center py-4 border-t border-gray-200">
+            <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
         )}
+
+        {/* End of data message */}
+        {!hasMore &&
+          allTransactions.length > 0 &&
+          allTransactions.length >= totalData && (
+            <div className="text-center py-4 border-t border-gray-200">
+              <p className="text-sm text-gray-500">
+                Semua data telah dimuat ({totalData} transaksi)
+              </p>
+            </div>
+          )}
       </div>
 
       {/* Detail Modal */}
