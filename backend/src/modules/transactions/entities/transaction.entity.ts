@@ -1,3 +1,4 @@
+// backend/src/modules/transactions/entities/transaction.entity.ts
 import {
   Entity,
   Column,
@@ -24,6 +25,11 @@ export enum TransactionStatus {
   COMPLETED = 'COMPLETED', // Selesai (stok berkurang)
   CANCELLED = 'CANCELLED', // Dibatalkan (stok kembali)
   EXPIRED = 'EXPIRED', // Kadaluarsa (stok kembali)
+}
+
+export enum OrderType {
+  ONLINE = 'ONLINE', // Pesanan dari website
+  OFFLINE = 'OFFLINE', // Pesanan dari kasir langsung
 }
 
 @Entity('transactions')
@@ -88,6 +94,14 @@ export class Transaction {
     default: TransactionStatus.PENDING,
   })
   status: TransactionStatus;
+
+  // ========== TAMBAHAN UNTUK POS/ONLINE ==========
+  @Column({
+    type: 'enum',
+    enum: OrderType,
+    default: OrderType.OFFLINE,
+  })
+  orderType: OrderType; // ONLINE atau OFFLINE
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;

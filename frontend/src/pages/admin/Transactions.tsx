@@ -1,3 +1,4 @@
+// frontend/src/pages/admin/Transactions.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -21,6 +22,8 @@ interface Transaction {
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "CANCELLED";
   notes: string | null;
   createdAt: string;
+  // ========== TAMBAHKAN INI ==========
+  orderType?: "ONLINE" | "OFFLINE"; // Optional karena transaksi lama mungkin tidak punya
 }
 
 interface Meta {
@@ -41,6 +44,7 @@ const Transactions: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [orderTypeFilter, setOrderTypeFilter] = useState("");
 
   // Infinite scroll states
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -90,7 +94,13 @@ const Transactions: React.FC = () => {
     setAllTransactions([]);
     setPage(1);
     setHasMore(true);
-  }, [statusFilter, methodFilter, dateFilter, debouncedSearch]);
+  }, [
+    statusFilter,
+    methodFilter,
+    dateFilter,
+    debouncedSearch,
+    orderTypeFilter,
+  ]);
 
   // Fetch transactions with current page
   const {
@@ -104,7 +114,8 @@ const Transactions: React.FC = () => {
       methodFilter,
       dateFilter,
       debouncedSearch,
-      page, // Page sekarang dinamis
+      orderTypeFilter,
+      page,
     ],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -112,6 +123,7 @@ const Transactions: React.FC = () => {
       if (methodFilter) params.append("paymentMethod", methodFilter);
       if (dateFilter) params.append("startDate", dateFilter);
       if (debouncedSearch) params.append("search", debouncedSearch);
+      if (orderTypeFilter) params.append("orderType", orderTypeFilter);
       params.append("page", page.toString());
       params.append("limit", "20");
 
@@ -120,6 +132,7 @@ const Transactions: React.FC = () => {
         method: methodFilter,
         date: dateFilter,
         search: debouncedSearch,
+        orderType: orderTypeFilter,
       });
 
       const response = await api.get(`/transactions?${params.toString()}`);
@@ -131,11 +144,9 @@ const Transactions: React.FC = () => {
   useEffect(() => {
     if (data) {
       if (page === 1) {
-        // Jika page 1, replace data
         setAllTransactions(data.data || []);
         console.log("Page 1 data:", data.data?.length);
       } else {
-        // Jika page > 1, append data
         setAllTransactions((prev) => {
           const newData = [...prev, ...(data.data || [])];
           console.log("Appending page", page, "total now:", newData.length);
@@ -295,6 +306,7 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
     setStatusFilter("");
     setMethodFilter("");
     setDateFilter("");
+    setOrderTypeFilter("");
   };
 
   // Format price
@@ -363,9 +375,9 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
 
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
-          <div className="relative">
+          <div className="relative md:col-span-1">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
@@ -400,6 +412,17 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
             <option value="TRANSFER">Transfer/QRIS</option>
           </select>
 
+          {/* Order Type Filter */}
+          <select
+            value={orderTypeFilter}
+            onChange={(e) => setOrderTypeFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          >
+            <option value="">Semua Tipe</option>
+            <option value="OFFLINE">🏬 Kasir</option>
+            <option value="ONLINE">📱 Online</option>
+          </select>
+
           {/* Date Filter */}
           <input
             type="date"
@@ -415,7 +438,11 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
         <p className="text-sm text-gray-600">
           Menampilkan {allTransactions.length} dari {totalData} transaksi
         </p>
-        {(statusFilter || methodFilter || dateFilter || searchTerm) && (
+        {(statusFilter ||
+          methodFilter ||
+          dateFilter ||
+          searchTerm ||
+          orderTypeFilter) && (
           <button
             onClick={handleClearFilters}
             className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
@@ -448,6 +475,9 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                   Metode
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
+                  Tipe
+                </th>
+                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
                   Status
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
@@ -458,7 +488,7 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
             <tbody>
               {allTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-500">
+                  <td colSpan={8} className="text-center py-8 text-gray-500">
                     Tidak ada transaksi
                   </td>
                 </tr>
@@ -498,6 +528,19 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                             }`}
                           >
                             {trx.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              trx.orderType === "ONLINE"
+                                ? "bg-purple-100 text-purple-600"
+                                : "bg-orange-100 text-orange-600"
+                            }`}
+                          >
+                            {trx.orderType === "ONLINE"
+                              ? "📱 Online"
+                              : "🏬 Kasir"}
                           </span>
                         </td>
                         <td className="py-4 px-6">
@@ -557,6 +600,19 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                             }`}
                           >
                             {trx.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              trx.orderType === "ONLINE"
+                                ? "bg-purple-100 text-purple-600"
+                                : "bg-orange-100 text-orange-600"
+                            }`}
+                          >
+                            {trx.orderType === "ONLINE"
+                              ? "📱 Online"
+                              : "🏬 Kasir"}
                           </span>
                         </td>
                         <td className="py-4 px-6">
@@ -654,6 +710,23 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                     <p>{selectedTransaction.paymentMethod}</p>
                   </div>
                   <div>
+                    <p className="text-sm text-gray-500">Tipe Pesanan</p>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        selectedTransaction.orderType === "ONLINE"
+                          ? "bg-purple-100 text-purple-600"
+                          : "bg-orange-100 text-orange-600"
+                      }`}
+                    >
+                      {selectedTransaction.orderType === "ONLINE"
+                        ? "📱 Online"
+                        : "🏬 Kasir"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
                     <p className="text-sm text-gray-500">Status</p>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedTransaction.status)}`}
@@ -661,13 +734,12 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                       {selectedTransaction.status}
                     </span>
                   </div>
-                </div>
-
-                <div>
-                  <p className="text-sm text-gray-500">Total</p>
-                  <p className="text-2xl font-bold text-primary-600">
-                    {formatPrice(selectedTransaction.total)}
-                  </p>
+                  <div>
+                    <p className="text-sm text-gray-500">Total</p>
+                    <p className="text-2xl font-bold text-primary-600">
+                      {formatPrice(selectedTransaction.total)}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Action Buttons */}

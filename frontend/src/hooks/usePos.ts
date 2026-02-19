@@ -41,6 +41,11 @@ export const usePos = () => {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
 
+  // ========== STATE BARU UNTUK ORDER TYPE ==========
+  const [orderType, setOrderType] = useState<"ONLINE" | "OFFLINE">("OFFLINE");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -74,8 +79,6 @@ export const usePos = () => {
       if (debouncedSearch) params.append("search", debouncedSearch);
       params.append("page", pageParam.toString());
       params.append("limit", "20");
-
-      console.log(`Fetching page ${pageParam}...`);
 
       const response = await api.get(`/products/public?${params.toString()}`);
       const productsData = response.data.data || [];
@@ -113,7 +116,7 @@ export const usePos = () => {
         }),
       );
 
-      // Filter produk yang ada stoknya (opsional)
+      // Hanya tampilkan produk dengan stok > 0 (untuk kasir)
       const inStock = productsWithStock.filter((p: any) => p.stock > 0);
 
       return {
@@ -212,6 +215,18 @@ export const usePos = () => {
   // Create transaction mutation
   const createTransactionMutation = useMutation({
     mutationFn: async (paymentData: any) => {
+      // Validasi untuk ONLINE order
+      if (orderType === "ONLINE") {
+        if (!customerName.trim()) {
+          throw new Error("Nama customer harus diisi untuk pesanan online");
+        }
+        if (!customerPhone.trim()) {
+          throw new Error(
+            "No WhatsApp customer harus diisi untuk pesanan online",
+          );
+        }
+      }
+
       const transactionData = {
         items: cart.map((item) => ({
           productId: item.productId,
@@ -223,8 +238,9 @@ export const usePos = () => {
         discount: paymentData.discount || 0,
         notes: paymentData.notes || "",
         isGuest: true,
-        customerName: paymentData.customerName || "Kasir",
-        customerPhone: paymentData.customerPhone || "-",
+        customerName: orderType === "ONLINE" ? customerName : "Kasir",
+        customerPhone: orderType === "ONLINE" ? customerPhone : "-",
+        orderType: orderType, // ONLINE atau OFFLINE
       };
 
       const response = await api.post("/transactions", transactionData);
@@ -234,13 +250,38 @@ export const usePos = () => {
       setLastTransaction(data);
       setCart([]);
       setShowPaymentModal(false);
-      setShowReceiptModal(true);
-      toast.success("Transaksi berhasil!");
+
+      if (orderType === "ONLINE") {
+        // Kirim WA ke customer untuk minta bayar
+        const waMessage = `Halo *${customerName}*,\n\nTerima kasih telah berbelanja di BumbuKu.\n\n*INVOICE:* ${data.invoiceNumber}\n*TOTAL:* Rp ${data.total.toLocaleString("id-ID")}\n\nSilakan lakukan pembayaran via transfer ke:\nBank BCA: 1234567890 a/n BumbuKu\n\nSetelah transfer, konfirmasi dengan membalas chat ini.`;
+
+        const phone = customerPhone.startsWith("0")
+          ? "62" + customerPhone.substring(1)
+          : customerPhone;
+
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waMessage)}`;
+        window.open(waUrl, "_blank");
+
+        toast.success("Pesanan online dibuat! WA terkirim ke customer");
+
+        // Reset form online
+        setCustomerName("");
+        setCustomerPhone("");
+        setOrderType("OFFLINE");
+      } else {
+        setShowReceiptModal(true);
+        toast.success("Transaksi berhasil!");
+      }
+
       refetch(); // Refresh produk
     },
     onError: (error: any) => {
       console.error("Transaction error:", error);
-      toast.error(error.response?.data?.message || "Gagal memproses transaksi");
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Gagal memproses transaksi",
+      );
     },
   });
 
@@ -283,6 +324,14 @@ export const usePos = () => {
     showReceiptModal,
     lastTransaction,
     isProcessing: createTransactionMutation.isPending,
+
+    // ========== STATE & ACTIONS BARU ==========
+    orderType,
+    customerName,
+    customerPhone,
+    setOrderType,
+    setCustomerName,
+    setCustomerPhone,
 
     // Actions
     setSelectedCategory,

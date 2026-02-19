@@ -1,7 +1,12 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, LessThan } from 'typeorm';
-import { Transaction, TransactionStatus, PaymentMethod } from './entities/transaction.entity';
+import {
+  Transaction,
+  TransactionStatus,
+  PaymentMethod,
+  OrderType, // <-- TAMBAHKAN OrderType DI SINI
+} from './entities/transaction.entity';
 import { TransactionItem } from './entities/transaction-item.entity';
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
 import { Product } from '../products/entities/product.entity';
@@ -10,6 +15,7 @@ import { Inventory, InventoryType } from '../inventory/entities/inventory.entity
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { subDays } from 'date-fns';
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -288,6 +294,7 @@ export class TransactionsService {
       paymentAmount,
       discount = 0,
       notes,
+      orderType = 'OFFLINE', // Default OFFLINE untuk kasir
     } = createTransactionDto;
 
     if (!items || items.length === 0) {
@@ -324,7 +331,8 @@ export class TransactionsService {
       const transaction = new Transaction();
       transaction.invoiceNumber = invoiceNumber;
       transaction.userId = userId || null;
-      transaction.customerName = customerName || 'Guest';
+      transaction.customerName =
+        customerName || (orderType === 'ONLINE' ? 'Online Customer' : 'Guest');
       transaction.customerPhone = customerPhone || '-';
       transaction.isGuest = isGuest !== false;
       transaction.customerId = customerId || null;
@@ -334,7 +342,18 @@ export class TransactionsService {
       transaction.paymentMethod = paymentMethod;
       transaction.paymentAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount : total;
       transaction.changeAmount = changeAmount;
-      transaction.status = TransactionStatus.PENDING;
+
+      // ========== LOGIKA STATUS BERDASARKAN ORDER TYPE ==========
+      if (orderType === 'ONLINE') {
+        // Pesanan online: PENDING dulu (tunggu pembayaran)
+        transaction.status = TransactionStatus.PENDING;
+        transaction.orderType = OrderType.ONLINE; // <-- PAKAI ENUM
+      } else {
+        // Pesanan offline (kasir): LANGSUNG COMPLETED
+        transaction.status = TransactionStatus.COMPLETED;
+        transaction.orderType = OrderType.OFFLINE; // <-- PAKAI ENUM
+      }
+
       transaction.notes = notes || null;
       transaction.expiresAt = paymentMethod === PaymentMethod.CASH ? null : expiresAt;
 
@@ -342,7 +361,7 @@ export class TransactionsService {
       const savedTransaction = await queryRunner.manager.save(transaction);
       console.log('Transaction saved with ID:', savedTransaction.id);
 
-      // Buat item transaksi (tanpa kurangi stok)
+      // Buat item transaksi
       console.log('Creating transaction items...');
       for (const item of validatedItems) {
         for (const allocation of item.allocations) {
@@ -359,9 +378,50 @@ export class TransactionsService {
         }
       }
 
-      // Buat RESERVASI (HOLD STOK)
-      console.log('Creating reservations...');
-      await this.createReservations(savedTransaction.id, validatedItems);
+      // ========== LOGIKA RESERVASI & STOK ==========
+      if (orderType === 'ONLINE') {
+        // Online: BUAT RESERVASI (HOLD STOK)
+        console.log('Creating reservations for ONLINE order...');
+        await this.createReservations(savedTransaction.id, validatedItems);
+      } else {
+        // Offline: LANGSUNG KURANGI STOK
+        console.log('Offline order - reducing stock immediately...');
+
+        for (const item of validatedItems) {
+          for (const allocation of item.allocations) {
+            // Kurangi stok langsung
+            await queryRunner.manager.query(
+              `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
+              [allocation.quantity, allocation.stock.id, allocation.quantity],
+            );
+
+            // Catat ke inventory
+            const inventoryId = require('crypto').randomUUID?.() || require('uuid').v4();
+            await queryRunner.manager.query(
+              `INSERT INTO inventory (
+              id, product_id, type, quantity, stock_before, stock_after, 
+              batch_code, expiry_date, purchase_price, selling_price, 
+              user_id, notes, reference_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+              [
+                inventoryId,
+                item.product.id,
+                'OUT',
+                -allocation.quantity,
+                allocation.stock.quantity,
+                allocation.stock.quantity - allocation.quantity,
+                allocation.stock.batchCode,
+                allocation.stock.expiryDate,
+                allocation.stock.purchasePrice,
+                allocation.stock.sellingPrice,
+                userId || null,
+                `Transaksi Kasir ${invoiceNumber}`,
+                savedTransaction.id,
+              ],
+            );
+          }
+        }
+      }
 
       await queryRunner.commitTransaction();
       console.log('Transaction committed successfully');

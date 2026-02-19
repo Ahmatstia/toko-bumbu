@@ -49,6 +49,14 @@ const Pos: React.FC = () => {
     lastTransaction,
     isProcessing,
 
+    // ========== STATE BARU ==========
+    orderType,
+    customerName,
+    customerPhone,
+    setOrderType,
+    setCustomerName,
+    setCustomerPhone,
+
     // Actions
     setSelectedCategory,
     setSearchTerm,
@@ -68,8 +76,6 @@ const Pos: React.FC = () => {
   const [cashAmount, setCashAmount] = useState<number>(total);
   const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
 
   // State untuk buka/tutup keranjang
   const [cartOpen, setCartOpen] = useState(false);
@@ -205,7 +211,7 @@ const Pos: React.FC = () => {
           </div>
         </div>
 
-        {/* Products Grid - Dengan Infinite Scroll */}
+        {/* Products Grid */}
         <div className="flex-1 overflow-y-auto px-3 pb-3">
           {filteredProducts.length === 0 ? (
             <div className="text-center py-8">
@@ -217,7 +223,6 @@ const Pos: React.FC = () => {
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
               {filteredProducts.map((product, index) => {
-                // Tambahkan ref ke produk terakhir untuk infinite scroll
                 if (filteredProducts.length === index + 1) {
                   return (
                     <div
@@ -230,9 +235,8 @@ const Pos: React.FC = () => {
                         disabled={product.stock === 0}
                         className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {/* Stock Badge */}
-                        {product.stock < 10 && product.stock > 0 && (
-                          <span className="absolute top-1 right-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded-full z-10">
+                        {product.stock > 0 && (
+                          <span className="absolute top-1 right-1 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full z-10">
                             {product.stock}
                           </span>
                         )}
@@ -241,8 +245,6 @@ const Pos: React.FC = () => {
                             0
                           </span>
                         )}
-
-                        {/* Image */}
                         <div className="aspect-square bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center p-1">
                           {product.imageUrl ? (
                             <img
@@ -254,8 +256,6 @@ const Pos: React.FC = () => {
                             <span className="text-xl">🛒</span>
                           )}
                         </div>
-
-                        {/* Info */}
                         <div className="p-1.5 text-left">
                           <h3 className="font-medium text-gray-800 text-[10px] leading-tight line-clamp-2 min-h-[2rem]">
                             {product.name}
@@ -265,6 +265,15 @@ const Pos: React.FC = () => {
                           </p>
                           <p className="text-[8px] text-gray-500 mt-0.5">
                             {product.unit}
+                          </p>
+                          <p
+                            className={`text-[8px] mt-0.5 ${
+                              product.stock > 0
+                                ? "text-green-600"
+                                : "text-red-500"
+                            }`}
+                          >
+                            Stok: {product.stock}
                           </p>
                         </div>
                       </button>
@@ -281,9 +290,8 @@ const Pos: React.FC = () => {
                         disabled={product.stock === 0}
                         className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {/* Stock Badge */}
-                        {product.stock < 10 && product.stock > 0 && (
-                          <span className="absolute top-1 right-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded-full z-10">
+                        {product.stock > 0 && (
+                          <span className="absolute top-1 right-1 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full z-10">
                             {product.stock}
                           </span>
                         )}
@@ -292,8 +300,6 @@ const Pos: React.FC = () => {
                             0
                           </span>
                         )}
-
-                        {/* Image */}
                         <div className="aspect-square bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center p-1">
                           {product.imageUrl ? (
                             <img
@@ -305,8 +311,6 @@ const Pos: React.FC = () => {
                             <span className="text-xl">🛒</span>
                           )}
                         </div>
-
-                        {/* Info */}
                         <div className="p-1.5 text-left">
                           <h3 className="font-medium text-gray-800 text-[10px] leading-tight line-clamp-2 min-h-[2rem]">
                             {product.name}
@@ -317,6 +321,15 @@ const Pos: React.FC = () => {
                           <p className="text-[8px] text-gray-500 mt-0.5">
                             {product.unit}
                           </p>
+                          <p
+                            className={`text-[8px] mt-0.5 ${
+                              product.stock > 0
+                                ? "text-green-600"
+                                : "text-red-500"
+                            }`}
+                          >
+                            Stok: {product.stock}
+                          </p>
                         </div>
                       </button>
                     </div>
@@ -326,14 +339,12 @@ const Pos: React.FC = () => {
             </div>
           )}
 
-          {/* Loading indicator untuk infinite scroll */}
           {isFetchingNextPage && (
             <div className="flex justify-center py-4">
               <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
 
-          {/* End of products message */}
           {!hasNextPage && filteredProducts.length > 0 && (
             <p className="text-center text-xs text-gray-400 py-2">
               Semua produk telah dimuat ({filteredProducts.length} produk)
@@ -342,7 +353,7 @@ const Pos: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Side - Cart (Bisa Buka/Tutup) */}
+      {/* Right Side - Cart */}
       <div
         className={`bg-white rounded-2xl shadow-sm flex flex-col overflow-hidden transition-all duration-300 ${
           cartOpen
@@ -368,7 +379,6 @@ const Pos: React.FC = () => {
                       Kosongkan
                     </button>
                   )}
-                  {/* Tombol tutup keranjang */}
                   <button
                     onClick={() => setCartOpen(false)}
                     className="lg:flex hidden text-gray-500 hover:text-gray-700"
@@ -385,8 +395,65 @@ const Pos: React.FC = () => {
               </div>
             </div>
 
+            {/* ========== ORDER TYPE SELECTOR ========== */}
+            <div className="p-3 border-b border-gray-200 bg-blue-50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-blue-800">
+                  Tipe Pesanan
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOrderType("OFFLINE")}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                    orderType === "OFFLINE"
+                      ? "bg-green-600 text-white shadow-sm"
+                      : "bg-white text-gray-600 border border-gray-300"
+                  }`}
+                >
+                  🏬 Kasir (Langsung)
+                </button>
+                <button
+                  onClick={() => setOrderType("ONLINE")}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                    orderType === "ONLINE"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-white text-gray-600 border border-gray-300"
+                  }`}
+                >
+                  📱 Online (Via WA)
+                </button>
+              </div>
+
+              {/* Form untuk ONLINE order */}
+              {orderType === "ONLINE" && (
+                <div className="mt-3 space-y-2 border-t border-blue-200 pt-3">
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Nama customer *"
+                    className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="No WhatsApp *"
+                    className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <p className="text-[9px] text-blue-600">
+                    * WA akan otomatis terkirim ke customer
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Cart Items */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div
+              className="flex-1 overflow-y-auto p-3 space-y-2"
+              style={{ maxHeight: "calc(100vh - 350px)" }}
+            >
               {cart.length === 0 ? (
                 <div className="text-center py-8">
                   <ShoppingCartIcon className="h-12 w-12 mx-auto mb-2 text-gray-300" />
@@ -462,9 +529,9 @@ const Pos: React.FC = () => {
               )}
             </div>
 
-            {/* Cart Summary */}
+            {/* Cart Summary - STICKY */}
             {cart.length > 0 && (
-              <div className="p-3 border-t border-gray-200 bg-gray-50">
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-3 shadow-lg">
                 <div className="space-y-1 mb-3">
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-600">Subtotal</span>
@@ -483,11 +550,22 @@ const Pos: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* Info status untuk ONLINE order */}
+                {orderType === "ONLINE" && (
+                  <div className="mb-2 p-2 bg-blue-50 rounded-lg text-[10px] text-blue-700">
+                    ⏳ Status: PENDING (menunggu pembayaran customer)
+                  </div>
+                )}
+
                 <button
                   onClick={() => setShowPaymentModal(true)}
-                  className="w-full bg-primary-600 text-white py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold text-sm"
+                  className="w-full bg-primary-600 text-white py-4 rounded-lg hover:bg-primary-700 transition-colors font-semibold text-base shadow-md"
                 >
-                  Bayar ({formatPrice(total)})
+                  {orderType === "ONLINE"
+                    ? "Buat Pesanan Online"
+                    : "Bayar Sekarang"}{" "}
+                  ({formatPrice(total)})
                 </button>
               </div>
             )}
@@ -516,7 +594,11 @@ const Pos: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Pembayaran</h2>
+                <h2 className="text-xl font-bold">
+                  {orderType === "ONLINE"
+                    ? "Buat Pesanan Online"
+                    : "Pembayaran"}
+                </h2>
                 <button
                   onClick={() => setShowPaymentModal(false)}
                   className="text-gray-500 hover:text-gray-700"
@@ -558,86 +640,93 @@ const Pos: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Method */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Metode Pembayaran
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setPaymentMethod("CASH")}
-                    className={`flex items-center justify-center gap-1 p-3 border-2 rounded-xl transition-all text-sm ${
-                      paymentMethod === "CASH"
-                        ? "border-primary-600 bg-primary-50 text-primary-600"
-                        : "border-gray-200 hover:border-primary-300"
-                    }`}
-                  >
-                    <BanknotesIcon className="h-4 w-4" />
-                    Tunai
-                  </button>
-                  <button
-                    onClick={() => setPaymentMethod("TRANSFER")}
-                    className={`flex items-center justify-center gap-1 p-3 border-2 rounded-xl transition-all text-sm ${
-                      paymentMethod === "TRANSFER"
-                        ? "border-primary-600 bg-primary-50 text-primary-600"
-                        : "border-gray-200 hover:border-primary-300"
-                    }`}
-                  >
-                    <CreditCardIcon className="h-4 w-4" />
-                    Transfer
-                  </button>
-                </div>
-              </div>
+              {/* Payment Method - Hanya untuk OFFLINE */}
+              {orderType === "OFFLINE" && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Metode Pembayaran
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setPaymentMethod("CASH")}
+                        className={`flex items-center justify-center gap-1 p-3 border-2 rounded-xl transition-all text-sm ${
+                          paymentMethod === "CASH"
+                            ? "border-primary-600 bg-primary-50 text-primary-600"
+                            : "border-gray-200 hover:border-primary-300"
+                        }`}
+                      >
+                        <BanknotesIcon className="h-4 w-4" />
+                        Tunai
+                      </button>
+                      <button
+                        onClick={() => setPaymentMethod("TRANSFER")}
+                        className={`flex items-center justify-center gap-1 p-3 border-2 rounded-xl transition-all text-sm ${
+                          paymentMethod === "TRANSFER"
+                            ? "border-primary-600 bg-primary-50 text-primary-600"
+                            : "border-gray-200 hover:border-primary-300"
+                        }`}
+                      >
+                        <CreditCardIcon className="h-4 w-4" />
+                        Transfer
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Cash Input */}
-              {paymentMethod === "CASH" && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Jumlah Uang
-                  </label>
-                  <input
-                    type="number"
-                    value={cashAmount}
-                    onChange={(e) => setCashAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                    min={finalTotal}
-                    step="1000"
-                  />
-                  {change > 0 && (
-                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-xs text-gray-600">Kembalian</p>
-                      <p className="text-base font-bold text-green-600">
-                        {formatPrice(change)}
-                      </p>
+                  {/* Cash Input */}
+                  {paymentMethod === "CASH" && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Jumlah Uang
+                      </label>
+                      <input
+                        type="number"
+                        value={cashAmount}
+                        onChange={(e) => setCashAmount(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                        min={finalTotal}
+                        step="1000"
+                      />
+                      {change > 0 && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                          <p className="text-xs text-gray-600">Kembalian</p>
+                          <p className="text-base font-bold text-green-600">
+                            {formatPrice(change)}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
+                </>
+              )}
+
+              {/* Customer Info - Untuk ONLINE sudah diisi di cart */}
+              {orderType === "OFFLINE" && (
+                <div className="mb-4 space-y-3">
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    placeholder="Nama customer (opsional)"
+                  />
+                  <input
+                    type="text"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    placeholder="No HP (opsional)"
+                  />
                 </div>
               )}
 
-              {/* Customer Info */}
-              <div className="mb-4 space-y-3">
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                  placeholder="Nama customer (opsional)"
-                />
-                <input
-                  type="text"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                  placeholder="No HP (opsional)"
-                />
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                  placeholder="Catatan (opsional)"
-                />
-              </div>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm mb-4"
+                placeholder="Catatan (opsional)"
+              />
 
               {/* Action Buttons */}
               <div className="flex gap-2">
@@ -654,11 +743,14 @@ const Pos: React.FC = () => {
                       cashAmount,
                       discount,
                       notes,
-                      customerName,
-                      customerPhone,
                     })
                   }
-                  disabled={!isPaymentValid || isProcessing}
+                  disabled={
+                    !isPaymentValid ||
+                    isProcessing ||
+                    (orderType === "ONLINE" &&
+                      (!customerName || !customerPhone))
+                  }
                   className="flex-1 bg-primary-600 text-white py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold text-sm disabled:opacity-50"
                 >
                   {isProcessing ? (
@@ -666,6 +758,8 @@ const Pos: React.FC = () => {
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       Proses...
                     </span>
+                  ) : orderType === "ONLINE" ? (
+                    "Buat Pesanan"
                   ) : (
                     "Proses Pembayaran"
                   )}
@@ -739,16 +833,6 @@ const Pos: React.FC = () => {
                     <span>Total</span>
                     <span>{formatPrice(lastTransaction.total)}</span>
                   </div>
-                  <div className="flex justify-between text-green-600">
-                    <span>Bayar</span>
-                    <span>{formatPrice(lastTransaction.paymentAmount)}</span>
-                  </div>
-                  {lastTransaction.changeAmount > 0 && (
-                    <div className="flex justify-between">
-                      <span>Kembali</span>
-                      <span>{formatPrice(lastTransaction.changeAmount)}</span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="border-t border-dashed border-gray-300 my-2"></div>
@@ -763,7 +847,6 @@ const Pos: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex gap-2">
                 <button
                   onClick={handlePrintReceipt}
@@ -779,8 +862,6 @@ const Pos: React.FC = () => {
                     setCashAmount(0);
                     setDiscount(0);
                     setNotes("");
-                    setCustomerName("");
-                    setCustomerPhone("");
                   }}
                   className="flex-1 bg-gray-200 text-gray-700 py-2.5 rounded-lg hover:bg-gray-300 transition-colors font-semibold text-sm"
                 >

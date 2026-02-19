@@ -1,3 +1,4 @@
+// backend/src/modules/transactions/dto/create-transaction.dto.ts
 import {
   IsEnum,
   IsNumber,
@@ -50,7 +51,7 @@ export class CreateTransactionDto {
   @Type(() => Number)
   discount?: number;
 
-  @IsNumber() // <-- TAMBAHKAN INI
+  @IsNumber()
   @IsOptional()
   @Min(0)
   @Type(() => Number)
@@ -59,4 +60,10 @@ export class CreateTransactionDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // ========== TAMBAHAN UNTUK POS/ONLINE ==========
+  @IsString()
+  @IsOptional()
+  @IsEnum(['ONLINE', 'OFFLINE'])
+  orderType?: 'ONLINE' | 'OFFLINE'; // Jenis pesanan
 }
