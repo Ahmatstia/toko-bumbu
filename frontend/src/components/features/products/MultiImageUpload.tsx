@@ -1,5 +1,5 @@
 // frontend/src/components/features/products/MultiImageUpload.tsx
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import {
   PhotoIcon,
@@ -35,14 +35,28 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
   maxImages = 10,
 }) => {
   const [images, setImages] = useState<ImageFile[]>(() => {
-    // Konversi existing images ke format internal
     return existingImages.map((img) => ({
       id: img.id,
-      url: img.imageUrl,
+      url: img.imageUrl.startsWith("http")
+        ? img.imageUrl
+        : `http://localhost:3001${img.imageUrl}`,
       isPrimary: img.isPrimary,
       sortOrder: img.sortOrder,
     }));
   });
+
+  // Sync saat existingImages berubah (misal buka modal edit)
+  useEffect(() => {
+    const mapped = existingImages.map((img) => ({
+      id: img.id,
+      url: img.imageUrl.startsWith("http")
+        ? img.imageUrl
+        : `http://localhost:3001${img.imageUrl}`,
+      isPrimary: img.isPrimary,
+      sortOrder: img.sortOrder,
+    }));
+    setImages(mapped);
+  }, [existingImages]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -183,13 +197,13 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
               >
                 <div className="aspect-square">
                   <img
-                    src={
-                      image.url.startsWith("http")
-                        ? image.url
-                        : `http://localhost:3001${image.url}`
-                    }
+                    src={image.url}
                     alt="Product"
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = "none";
+                    }}
                   />
                 </div>
 
