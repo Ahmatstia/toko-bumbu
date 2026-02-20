@@ -139,6 +139,13 @@ export class TransactionsController {
     return this.transactionsService.cancelTransaction(id, reason);
   }
 
+  @Post(':id/return')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async processReturn(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+    return this.transactionsService.processReturn(id, reason, req.user.id);
+  }
+
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)

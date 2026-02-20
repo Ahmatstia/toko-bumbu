@@ -12,6 +12,7 @@ import { Reservation, ReservationStatus } from './entities/reservation.entity';
 import { Product } from '../products/entities/product.entity';
 import { Stock } from '../inventory/entities/stock.entity';
 import { Inventory, InventoryType } from '../inventory/entities/inventory.entity';
+import { v4 as uuidv4 } from 'uuid';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { subDays } from 'date-fns';
@@ -870,5 +871,75 @@ export class TransactionsService {
       payment: parseFloat(result.payment) || 0,
       average: parseFloat(result.average) || 0,
     };
+  }
+
+  // PROSES RETUR BARANG (Stok kembali)
+  async processReturn(transactionId: string, reason: string, userId?: string) {
+    console.log('=== PROCESS RETURN START ===');
+    const transaction = await this.findOne(transactionId);
+
+    if (transaction.status !== TransactionStatus.COMPLETED) {
+      throw new BadRequestException('Hanya transaksi COMPLETED yang bisa diretur');
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      for (const item of transaction.items) {
+        await queryRunner.manager.query(
+          `UPDATE stocks SET quantity = quantity + ? WHERE id = ?`,
+          [item.quantity, item.stockId],
+        );
+
+        const updatedStockResult = await queryRunner.manager.query(
+          `SELECT quantity, batch_code, expiry_date, purchase_price, selling_price FROM stocks WHERE id = ?`,
+          [item.stockId]
+        );
+        
+        const stockRecord = updatedStockResult[0];
+        const stockAfter = stockRecord?.quantity ?? 0;
+        const stockBefore = stockAfter - item.quantity;
+
+        const inventoryId = uuidv4();
+        await queryRunner.manager.query(
+          `INSERT INTO inventory (
+            id, product_id, type, quantity, stock_before, stock_after, 
+            batch_code, expiry_date, purchase_price, selling_price, 
+            user_id, notes, reference_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            inventoryId,
+            item.productId,
+            'RETURN',
+            item.quantity,
+            stockBefore,
+            stockAfter,
+            stockRecord?.batch_code || null,
+            stockRecord?.expiry_date || null,
+            stockRecord?.purchase_price || 0,
+            stockRecord?.selling_price || 0,
+            userId || null,
+            `RETUR: ${reason} (Inv: ${transaction.invoiceNumber})`,
+            transaction.id
+          ]
+        );
+      }
+
+      transaction.status = TransactionStatus.RETURNED;
+      transaction.notes = transaction.notes
+        ? `RETURNED: ${reason} | ${transaction.notes}`
+        : `RETURNED: ${reason}`;
+
+      await queryRunner.manager.save(transaction);
+      await queryRunner.commitTransaction();
+      return { message: 'Barang berhasil diretur, stok telah dikembalikan', transaction };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

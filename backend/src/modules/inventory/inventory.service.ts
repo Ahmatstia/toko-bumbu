@@ -424,4 +424,23 @@ export class InventoryService {
 
     return stocks;
   }
+
+  async getLatestPrices(productId: string) {
+    const latestStock = await this.stockRepository.findOne({
+      where: { productId },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!latestStock) {
+      return {
+        purchasePrice: 0,
+        sellingPrice: 0,
+      };
+    }
+
+    return {
+      purchasePrice: Number(latestStock.purchasePrice) || 0,
+      sellingPrice: Number(latestStock.sellingPrice) || 0,
+    };
+  }
 }

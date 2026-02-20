@@ -6,6 +6,7 @@ import { Inventory } from './entities/inventory.entity';
 import { Stock } from './entities/stock.entity';
 import { Product } from '../products/entities/product.entity';
 import { UsersModule } from '../users/users.module';
+import { InventoryCron } from './cron/inventory.cron';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { UsersModule } from '../users/users.module';
     UsersModule, // Biar bisa akses User entity
   ],
   controllers: [InventoryController],
-  providers: [InventoryService],
+  providers: [InventoryService, InventoryCron],
   exports: [InventoryService],
 })
 export class InventoryModule {}

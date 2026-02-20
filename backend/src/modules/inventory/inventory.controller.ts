@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -56,6 +56,13 @@ export class InventoryController {
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
   async getLowStock(@Query('threshold') threshold?: string) {
     return this.inventoryService.getLowStock(threshold ? parseInt(threshold) : 5);
+  }
+
+  @Get('latest-prices/:productId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  async getLatestPrices(@Param('productId') productId: string) {
+    return this.inventoryService.getLatestPrices(productId);
   }
 
   @Get('stock/expiring')

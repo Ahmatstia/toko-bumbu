@@ -25,6 +25,7 @@ export enum TransactionStatus {
   COMPLETED = 'COMPLETED', // Selesai (stok berkurang)
   CANCELLED = 'CANCELLED', // Dibatalkan (stok kembali)
   EXPIRED = 'EXPIRED', // Kadaluarsa (stok kembali)
+  RETURNED = 'RETURNED', // Barang dikembalikan (stok kembali)
 }
 
 export enum OrderType {

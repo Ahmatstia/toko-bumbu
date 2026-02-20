@@ -94,6 +94,28 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     addStockMutation.mutate(formData);
   };
 
+  // Fetch latest prices when product is selected
+  React.useEffect(() => {
+    const fetchLatestPrices = async () => {
+      if (!formData.productId) return;
+
+      try {
+        const response = await api.get(`/inventory/latest-prices/${formData.productId}`);
+        const { purchasePrice, sellingPrice } = response.data;
+        
+        setFormData(prev => ({
+          ...prev,
+          purchasePrice: purchasePrice || 0,
+          sellingPrice: sellingPrice || 0,
+        }));
+      } catch (error) {
+        console.error("Error fetching latest prices:", error);
+      }
+    };
+
+    fetchLatestPrices();
+  }, [formData.productId]);
+
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement

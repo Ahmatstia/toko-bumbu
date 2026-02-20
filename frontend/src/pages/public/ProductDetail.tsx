@@ -127,22 +127,12 @@ const ProductDetail: React.FC = () => {
     if (allImages.length > 0 && !selectedImage) {
       setSelectedImage(allImages[0]);
     }
-  }, [allImages]);
+  }, [allImages, selectedImage]);
 
   // Format harga
   const formatPrice = (price: number) => {
     if (!price || price === 0) return "Rp 0";
     return `Rp ${price.toLocaleString("id-ID")}`;
-  };
-
-  // Format tanggal
-  const formatDate = (date: string | null) => {
-    if (!date) return "-";
-    return new Date(date).toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
   };
 
   // Handle quantity change
@@ -336,7 +326,7 @@ const ProductDetail: React.FC = () => {
 
             {/* Stock Status */}
             <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between">
                 <span className="font-semibold text-gray-700">
                   Ketersediaan Stok:
                 </span>
@@ -352,31 +342,6 @@ const ProductDetail: React.FC = () => {
                   </span>
                 )}
               </div>
-
-              {/* Batch Info */}
-              {stocks.length > 1 && (
-                <div className="mt-3 text-sm">
-                  <p className="font-medium text-gray-600 mb-2">
-                    Detail Stok per Batch:
-                  </p>
-                  {stocks.map((stock) => (
-                    <div
-                      key={stock.id}
-                      className="flex justify-between text-gray-500 mb-1"
-                    >
-                      <span>Batch: {stock.batchCode || "N/A"}</span>
-                      <span>
-                        {stock.quantity} {product.unit}
-                      </span>
-                      {stock.expiryDate && (
-                        <span className="text-xs">
-                          Exp: {formatDate(stock.expiryDate)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Description */}
@@ -480,44 +445,6 @@ const ProductDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Informasi Stok */}
-      {stocks.length > 0 && (
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
-            Informasi Stok
-          </h2>
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4">Batch</th>
-                  <th className="text-left py-3 px-4">Jumlah</th>
-                  <th className="text-left py-3 px-4">Harga Beli</th>
-                  <th className="text-left py-3 px-4">Harga Jual</th>
-                  <th className="text-left py-3 px-4">Expiry Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stocks.map((stock) => (
-                  <tr key={stock.id} className="border-b hover:bg-gray-50">
-                    <td className="py-3 px-4">{stock.batchCode || "N/A"}</td>
-                    <td className="py-3 px-4">{stock.quantity}</td>
-                    <td className="py-3 px-4">
-                      {formatPrice(Number(stock.purchasePrice))}
-                    </td>
-                    <td className="py-3 px-4">
-                      {formatPrice(Number(stock.sellingPrice))}
-                    </td>
-                    <td className="py-3 px-4">
-                      {formatDate(stock.expiryDate)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
