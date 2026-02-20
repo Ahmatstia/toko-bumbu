@@ -38,7 +38,8 @@ import AdminCategories from "./pages/admin/Categories";
 import AdminInventory from "./pages/admin/Inventory";
 import AdminReports from "./pages/admin/Reports";
 import AdminStaff from "./pages/admin/Staff";
-import AdminTransactions from "./pages/admin/Transactions"; // <-- CUKUP SATU INI
+import AdminTransactions from "./pages/admin/Transactions";
+import AdminCustomers from "./pages/admin/Customers";
 
 // Protected Route Components
 import CustomerRoute from "./components/auth/CustomerRoute";
@@ -103,6 +104,7 @@ function App() {
             <Route path="reports" element={<AdminReports />} />
             <Route path="staff" element={<AdminStaff />} />
             <Route path="transactions" element={<AdminTransactions />} />
+            <Route path="customers" element={<AdminCustomers />} />
           </Route>
 
           {/* Fallback - Redirect ke home */}

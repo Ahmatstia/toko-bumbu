@@ -1,3 +1,4 @@
+// frontend/src/components/auth/AdminRoute.tsx
 import React from "react";
 import { Navigate } from "react-router-dom";
 import { authService } from "../../services/auth.service";
@@ -9,21 +10,26 @@ interface AdminRouteProps {
 const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
   const isAdmin = authService.isAdmin();
+  const userRole = authService.getUserRole();
 
-  // Untuk debugging
-  console.log("AdminRoute - isAuthenticated:", isAuthenticated);
-  console.log("AdminRoute - isAdmin:", isAdmin);
+  console.log("=== AdminRoute Debug ===");
+  console.log("isAuthenticated:", isAuthenticated);
+  console.log("isAdmin:", isAdmin);
+  console.log("userRole:", userRole);
+  console.log("token:", authService.getToken());
+  authService.debugStorage();
 
-  // Kalau tidak login, redirect ke login admin
   if (!isAuthenticated) {
+    console.log("⛔ Not authenticated, redirecting to login");
     return <Navigate to="/login" replace />;
   }
 
-  // Kalau bukan admin, redirect ke home (bukan ke customer)
   if (!isAdmin) {
+    console.log("⛔ Not admin, redirecting to home");
     return <Navigate to="/" replace />;
   }
 
+  console.log("✅ Admin access granted");
   return <>{children}</>;
 };
 

@@ -54,12 +54,26 @@ export const usePos = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Fetch categories
+  // ========== PERBAIKAN: FETCH CATEGORIES DENGAN SAFE CHECK ==========
   const { data: categories } = useQuery<Category[]>({
     queryKey: ["pos-categories"],
     queryFn: async () => {
       const response = await api.get("/categories");
-      return response.data;
+      const data = response.data;
+
+      // Handle response yang bisa berupa array langsung
+      if (Array.isArray(data)) {
+        return data;
+      }
+
+      // Handle response dengan pagination { data: [...], meta: ... }
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+
+      // Fallback: return array kosong
+      console.warn("Categories response is not an array:", data);
+      return [];
     },
   });
 
@@ -79,6 +93,8 @@ export const usePos = () => {
       if (debouncedSearch) params.append("search", debouncedSearch);
       params.append("page", pageParam.toString());
       params.append("limit", "20");
+
+      console.log(`Fetching page ${pageParam}...`);
 
       const response = await api.get(`/products/public?${params.toString()}`);
       const productsData = response.data.data || [];
@@ -103,6 +119,7 @@ export const usePos = () => {
               price: Number(price),
               stock: totalStock,
               categoryName: product.category?.name || "",
+              categoryId: product.category?.id || "",
             };
           } catch (error) {
             console.error(`Error fetching stock for ${product.name}:`, error);
@@ -111,6 +128,7 @@ export const usePos = () => {
               price: 0,
               stock: 0,
               categoryName: product.category?.name || "",
+              categoryId: product.category?.id || "",
             };
           }
         }),
@@ -301,7 +319,7 @@ export const usePos = () => {
 
   return {
     // Data
-    categories,
+    categories, // <-- SUDAH AMAN KARENA SUDAH DI-FIX DI ATAS
     products: allProducts,
     cart,
     selectedCategory,

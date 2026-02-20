@@ -1,3 +1,4 @@
+// backend/src/modules/categories/categories.service.ts
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -24,10 +25,34 @@ export class CategoriesService {
     }
   }
 
-  async findAll() {
-    return await this.categoryRepository.find({
-      relations: ['products'],
-    });
+  // ========== MODIFIKASI INI UNTUK PAGINATION & SEARCH ==========
+  async findAll(search?: string, page: number = 1, limit: number = 20) {
+    const query = this.categoryRepository
+      .createQueryBuilder('category')
+      .leftJoinAndSelect('category.products', 'products')
+      .loadRelationCountAndMap('category.productCount', 'category.products');
+
+    if (search) {
+      query.where('category.name LIKE :search OR category.description LIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const [data, total] = await query
+      .orderBy('category.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string) {

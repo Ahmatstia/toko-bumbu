@@ -1,3 +1,4 @@
+// frontend/src/pages/admin/Products.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -85,12 +86,28 @@ const Products: React.FC = () => {
   const observer = useRef<IntersectionObserver | null>(null);
   const queryClient = useQueryClient();
 
-  // Fetch categories
-  const { data: categories } = useQuery<Category[]>({
+  // ========== PERBAIKAN: FETCH CATEGORIES DENGAN SAFE CHECK ==========
+  const { data: categories, isLoading: categoriesLoading } = useQuery<
+    Category[]
+  >({
     queryKey: ["categories"],
     queryFn: async () => {
       const response = await api.get("/categories");
-      return response.data;
+      const data = response.data;
+
+      // Jika data adalah array, return langsung
+      if (Array.isArray(data)) {
+        return data;
+      }
+
+      // Jika data adalah object dengan properti data (pagination)
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+
+      // Fallback: return array kosong
+      console.warn("Categories response is not an array:", data);
+      return [];
     },
   });
 
@@ -99,7 +116,7 @@ const Products: React.FC = () => {
     try {
       const params = new URLSearchParams();
       params.append("page", pageNum.toString());
-      params.append("limit", "20"); // Lebih banyak untuk admin
+      params.append("limit", "20");
       if (selectedCategory) params.append("categoryId", selectedCategory);
       if (searchTerm) params.append("search", searchTerm);
 
@@ -196,7 +213,7 @@ const Products: React.FC = () => {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadInitialProducts();
-    }, 500); // Debounce 500ms
+    }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [selectedCategory, searchTerm, showInactive, loadInitialProducts]);
@@ -324,7 +341,7 @@ const Products: React.FC = () => {
     setFormData({
       name: "",
       description: "",
-      categoryId: categories?.[0]?.id || "",
+      categoryId: categories && categories.length > 0 ? categories[0].id : "",
       unit: "Pcs",
       sku: "",
       minStock: 5,
@@ -447,12 +464,12 @@ const Products: React.FC = () => {
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Search - REAL-TIME */}
+          {/* Search */}
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Cari produk (ketik langsung)..."
+              placeholder="Cari produk..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -466,11 +483,13 @@ const Products: React.FC = () => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           >
             <option value="">Semua Kategori</option>
-            {categories?.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
+            {/* ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ========== */}
+            {Array.isArray(categories) &&
+              categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
           </select>
 
           {/* Show Inactive Toggle */}
@@ -674,11 +693,13 @@ const Products: React.FC = () => {
                     required
                   >
                     <option value="">Pilih Kategori</option>
-                    {categories?.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
+                    {/* ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ========== */}
+                    {Array.isArray(categories) &&
+                      categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
 

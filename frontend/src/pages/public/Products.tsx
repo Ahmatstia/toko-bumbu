@@ -1,3 +1,4 @@
+// frontend/src/pages/public/Products.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -92,14 +93,29 @@ const Products: React.FC = () => {
 
   const addToCart = useCartStore((state) => state.addItem);
 
-  // Fetch categories
+  // ========== PERBAIKAN: FETCH CATEGORIES DENGAN SAFE CHECK ==========
   const { data: categories, isLoading: categoriesLoading } = useQuery<
     Category[]
   >({
     queryKey: ["categories"],
     queryFn: async () => {
       const response = await api.get("/categories");
-      return response.data;
+      // Pastikan response.data adalah array
+      const data = response.data;
+
+      // Jika data adalah array, return langsung
+      if (Array.isArray(data)) {
+        return data;
+      }
+
+      // Jika data adalah object dengan properti data (pagination)
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+
+      // Fallback: return array kosong
+      console.warn("Categories response is not an array:", data);
+      return [];
     },
   });
 
@@ -138,7 +154,6 @@ const Products: React.FC = () => {
       }),
     );
   };
-  // =====================================================
 
   // Fetch initial products
   const {
@@ -228,12 +243,12 @@ const Products: React.FC = () => {
       if (searchTerm) params.set("search", searchTerm);
       if (selectedCategory) params.set("category", selectedCategory);
       setSearchParams(params);
-    }, 500); // Debounce 500ms
+    }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, selectedCategory, setSearchParams]);
 
-  // Handle search submit (untuk tombol search)
+  // Handle search submit
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     refetch();
@@ -334,11 +349,13 @@ const Products: React.FC = () => {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
             >
               <option value="">Semua Kategori</option>
-              {categories?.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
+              {/* ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ========== */}
+              {Array.isArray(categories) &&
+                categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -385,7 +402,6 @@ const Products: React.FC = () => {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {allProducts.map((product, index) => {
-              // Untuk infinite scroll, tambahkan ref ke produk terakhir
               if (allProducts.length === index + 1) {
                 return (
                   <div
@@ -393,7 +409,6 @@ const Products: React.FC = () => {
                     key={product.id}
                     className="group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden"
                   >
-                    {/* Product Image */}
                     <Link to={`/products/${product.id}`}>
                       <div className="relative h-48 bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center overflow-hidden">
                         {product.imageUrl ? (
@@ -432,7 +447,6 @@ const Products: React.FC = () => {
                       </div>
                     </Link>
 
-                    {/* Product Info */}
                     <div className="p-5">
                       <Link to={`/products/${product.id}`}>
                         <h3 className="font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3rem] hover:text-primary-600 transition-colors">
@@ -460,11 +474,6 @@ const Products: React.FC = () => {
                               ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                               : "bg-primary-600 text-white hover:bg-primary-700"
                           }`}
-                          title={
-                            product.stockQuantity === 0
-                              ? "Stok habis"
-                              : "Tambah ke keranjang"
-                          }
                         >
                           <svg
                             className="w-5 h-5"
@@ -490,7 +499,6 @@ const Products: React.FC = () => {
                     key={product.id}
                     className="group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden"
                   >
-                    {/* Product Image */}
                     <Link to={`/products/${product.id}`}>
                       <div className="relative h-48 bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center overflow-hidden">
                         {product.imageUrl ? (
@@ -529,7 +537,6 @@ const Products: React.FC = () => {
                       </div>
                     </Link>
 
-                    {/* Product Info */}
                     <div className="p-5">
                       <Link to={`/products/${product.id}`}>
                         <h3 className="font-semibold text-gray-800 mb-2 line-clamp-2 min-h-[3rem] hover:text-primary-600 transition-colors">
@@ -557,11 +564,6 @@ const Products: React.FC = () => {
                               ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                               : "bg-primary-600 text-white hover:bg-primary-700"
                           }`}
-                          title={
-                            product.stockQuantity === 0
-                              ? "Stok habis"
-                              : "Tambah ke keranjang"
-                          }
                         >
                           <svg
                             className="w-5 h-5"
@@ -585,14 +587,12 @@ const Products: React.FC = () => {
             })}
           </div>
 
-          {/* Loading indicator */}
           {isLoadingMore && (
             <div className="flex justify-center mt-8">
               <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
 
-          {/* End of products message */}
           {!hasMore && allProducts.length > 0 && (
             <p className="text-center text-gray-500 mt-8">
               Tidak ada produk lagi

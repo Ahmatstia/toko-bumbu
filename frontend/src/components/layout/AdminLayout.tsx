@@ -37,6 +37,8 @@ const AdminLayout: React.FC = () => {
     { name: "Kategori", href: "/admin/categories", icon: TagIcon },
     { name: "Stok", href: "/admin/inventory", icon: CubeIcon },
     { name: "Laporan", href: "/admin/reports", icon: ChartBarIcon },
+    { name: "Customers", href: "/admin/customers", icon: UsersIcon },
+
     ...(role === "OWNER"
       ? [{ name: "Staff", href: "/admin/staff", icon: UsersIcon }]
       : []),

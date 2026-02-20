@@ -1,3 +1,4 @@
+// backend/src/modules/users/entities/user.entity.ts
 import {
   Entity,
   Column,
@@ -21,6 +22,10 @@ export class User {
 
   @Column({ unique: true })
   username: string; // Untuk login, misal: "abang", "kasir1"
+
+  // ========== TAMBAHKAN INI ==========
+  @Column({ unique: true, nullable: true })
+  email: string; // Email asli untuk notifikasi & reset password
 
   @Column()
   password: string; // Hash password

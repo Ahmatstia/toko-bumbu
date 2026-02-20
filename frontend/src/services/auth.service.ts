@@ -1,3 +1,4 @@
+// frontend/src/services/auth.service.ts
 import api from "./api";
 
 export interface LoginCredentials {
@@ -20,33 +21,58 @@ export interface CustomerLoginData {
 export const authService = {
   // Admin login
   adminLogin: async (credentials: LoginCredentials) => {
-    const response = await api.post("/auth/login", credentials);
-    if (response.data.access_token) {
-      localStorage.setItem("adminToken", response.data.access_token);
-      localStorage.setItem("userRole", response.data.user.role);
-      localStorage.setItem("userData", JSON.stringify(response.data.user));
+    try {
+      console.log("Admin login attempt:", credentials.username);
+      const response = await api.post("/auth/login", credentials);
+      console.log("Login response:", response.data);
+
+      if (response.data.access_token) {
+        localStorage.setItem("adminToken", response.data.access_token);
+        localStorage.setItem("userRole", response.data.user.role);
+        localStorage.setItem("userData", JSON.stringify(response.data.user));
+        console.log("✅ User saved:", response.data.user);
+      }
+      return response.data;
+    } catch (error) {
+      console.error("Login error:", error);
+      throw error;
     }
-    return response.data;
   },
 
   // Customer register
   customerRegister: async (data: CustomerRegisterData) => {
-    const response = await api.post("/customer/auth/register", data);
-    if (response.data.access_token) {
-      localStorage.setItem("customerToken", response.data.access_token);
-      localStorage.setItem("userData", JSON.stringify(response.data.customer));
+    try {
+      const response = await api.post("/customer/auth/register", data);
+      if (response.data.access_token) {
+        localStorage.setItem("customerToken", response.data.access_token);
+        localStorage.setItem(
+          "userData",
+          JSON.stringify(response.data.customer),
+        );
+      }
+      return response.data;
+    } catch (error) {
+      console.error("Register error:", error);
+      throw error;
     }
-    return response.data;
   },
 
   // Customer login
   customerLogin: async (data: CustomerLoginData) => {
-    const response = await api.post("/customer/auth/login", data);
-    if (response.data.access_token) {
-      localStorage.setItem("customerToken", response.data.access_token);
-      localStorage.setItem("userData", JSON.stringify(response.data.customer));
+    try {
+      const response = await api.post("/customer/auth/login", data);
+      if (response.data.access_token) {
+        localStorage.setItem("customerToken", response.data.access_token);
+        localStorage.setItem(
+          "userData",
+          JSON.stringify(response.data.customer),
+        );
+      }
+      return response.data;
+    } catch (error) {
+      console.error("Customer login error:", error);
+      throw error;
     }
-    return response.data;
   },
 
   // Logout
@@ -55,16 +81,32 @@ export const authService = {
     localStorage.removeItem("customerToken");
     localStorage.removeItem("userRole");
     localStorage.removeItem("userData");
+    console.log("✅ Logged out, storage cleared");
   },
 
   // Get current user
   getCurrentUser: () => {
     try {
       const userData = localStorage.getItem("userData");
-      return userData ? JSON.parse(userData) : null;
-    } catch {
+      if (!userData) {
+        console.log("ℹ️ No user data in storage");
+        return null;
+      }
+      const user = JSON.parse(userData);
+      console.log("📦 getCurrentUser:", user);
+      return user;
+    } catch (error) {
+      console.error("❌ Error parsing user data:", error);
       return null;
     }
+  },
+
+  // Get token
+  getToken: () => {
+    return (
+      localStorage.getItem("adminToken") ||
+      localStorage.getItem("customerToken")
+    );
   },
 
   // Check if logged in
@@ -90,6 +132,24 @@ export const authService = {
 
   // Get role
   getUserRole: () => {
-    return localStorage.getItem("userRole");
+    const role = localStorage.getItem("userRole");
+    console.log("🔑 getUserRole:", role);
+    return role;
+  },
+
+  // Debug storage
+  debugStorage: () => {
+    console.log("=== 📦 STORAGE DEBUG ===");
+    console.log(
+      "adminToken:",
+      localStorage.getItem("adminToken") ? "✅" : "❌",
+    );
+    console.log(
+      "customerToken:",
+      localStorage.getItem("customerToken") ? "✅" : "❌",
+    );
+    console.log("userRole:", localStorage.getItem("userRole"));
+    console.log("userData:", localStorage.getItem("userData"));
+    console.log("========================");
   },
 };
