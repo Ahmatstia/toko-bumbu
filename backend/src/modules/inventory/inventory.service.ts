@@ -1,10 +1,23 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThan, MoreThan, Like } from 'typeorm';
+import { Repository, DataSource, LessThan, MoreThan, IsNull } from 'typeorm';
 import { Inventory, InventoryType } from './entities/inventory.entity';
 import { Stock } from './entities/stock.entity';
 import { Product } from '../products/entities/product.entity';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
+
+export interface GroupedStock {
+  id: string;
+  productId: string;
+  product: Product;
+  totalQuantity: number;
+  batches: Stock[];
+  minSellingPrice: number;
+  maxSellingPrice: number;
+  minPurchasePrice: number;
+  maxPurchasePrice: number;
+  earliestExpiryDate: Date | null;
+}
 
 @Injectable()
 export class InventoryService {
@@ -16,7 +29,26 @@ export class InventoryService {
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
     private dataSource: DataSource,
-  ) {}
+  ) {
+    // Jalankan cleanup saat service diinisialisasi
+    this.cleanupOrphanedStock().catch((err) =>
+      console.error('Failed to cleanup orphaned stock on startup', err),
+    );
+  }
+
+  async cleanupOrphanedStock() {
+    const orphanedStocks = await this.stockRepository
+      .createQueryBuilder('stock')
+      .leftJoin('stock.product', 'product')
+      .where('product.id IS NULL')
+      .getMany();
+
+    if (orphanedStocks.length > 0) {
+      console.log(`🧹 Cleaning up ${orphanedStocks.length} orphaned stock entries...`);
+      await this.stockRepository.remove(orphanedStocks);
+    }
+    return orphanedStocks.length;
+  }
 
   async addStock(createInventoryDto: CreateInventoryDto, userId?: string) {
     const {
@@ -47,15 +79,13 @@ export class InventoryService {
       // Cari stock existing
       let stock: Stock | null = null;
 
-      const whereCondition: any = { productId };
-      if (batchCode) {
-        whereCondition.batchCode = batchCode;
-      } else {
-        whereCondition.batchCode = null;
-      }
+      const whereCondition = {
+        productId: productId,
+        batchCode: batchCode || IsNull(),
+      };
 
       stock = await queryRunner.manager.findOne(Stock, {
-        where: whereCondition,
+        where: whereCondition as any,
       });
 
       const stockBefore = stock?.quantity || 0;
@@ -199,8 +229,40 @@ export class InventoryService {
     return this.checkExpiredProducts();
   }
 
-  // FIXED: Tambahkan parameter search
-  async getStock(productId?: string, batchCode?: string, search?: string) {
+  async getStock(
+    productId?: string,
+    batchCode?: string,
+    search?: string,
+    lowStock?: boolean,
+    expiringSoon?: boolean,
+    days: number = 30,
+    isGrouped: boolean = false,
+  ) {
+    // 1. Dapatkan Statistik Keseluruhan (Global - Abaikan filter kecuali productId jika ada)
+    const statsQuery = this.stockRepository
+      .createQueryBuilder('stock')
+      .leftJoinAndSelect('stock.product', 'product');
+
+    if (productId) {
+      statsQuery.andWhere('stock.productId = :productId', { productId });
+    }
+
+    const allStocksForStats = await statsQuery.getMany();
+
+    const expiryThreshold = new Date();
+    expiryThreshold.setDate(expiryThreshold.getDate() + days);
+
+    const stats = {
+      safe: allStocksForStats.filter(s => s.quantity > (s.product?.minStock ?? 0)).length,
+      low: allStocksForStats.filter(s => s.quantity > 0 && s.quantity <= (s.product?.minStock ?? 0)).length,
+      out: allStocksForStats.filter(s => s.quantity === 0).length,
+      expiring: allStocksForStats.filter(s => {
+        if (!s.expiryDate || s.quantity === 0) return false;
+        return new Date(s.expiryDate) <= expiryThreshold;
+      }).length,
+    };
+
+    // 2. Query Data Stok dengan Filter Aktif
     const query = this.stockRepository
       .createQueryBuilder('stock')
       .leftJoinAndSelect('stock.product', 'product');
@@ -213,9 +275,22 @@ export class InventoryService {
       query.andWhere('stock.batchCode = :batchCode', { batchCode });
     }
 
-    // TAMBAHKAN PENCARIAN BERDASARKAN NAMA PRODUK
     if (search) {
-      query.andWhere('product.name LIKE :search', { search: `%${search}%` });
+      query.andWhere(
+        '(LOWER(product.name) LIKE LOWER(:search) OR LOWER(COALESCE(stock.batchCode, "")) LIKE LOWER(:search) OR LOWER(product.sku) LIKE LOWER(:search))',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (lowStock) {
+      query.andWhere('stock.quantity <= product.minStock').andWhere('stock.quantity > 0');
+    }
+
+    if (expiringSoon) {
+      query
+        .andWhere('stock.expiryDate IS NOT NULL')
+        .andWhere('stock.expiryDate <= :expiryThreshold', { expiryThreshold })
+        .andWhere('stock.quantity > 0');
     }
 
     const stocks = await query
@@ -223,11 +298,60 @@ export class InventoryService {
       .addOrderBy('stock.createdAt', 'DESC')
       .getMany();
 
+    if (isGrouped) {
+      const groupedMap = new Map<string, GroupedStock>();
+
+      stocks.forEach((s) => {
+        if (!s.product) return;
+
+        const pId = s.productId;
+        if (!groupedMap.has(pId)) {
+          groupedMap.set(pId, {
+            id: `group-${pId}`,
+            productId: pId,
+            product: s.product,
+            totalQuantity: 0,
+            batches: [],
+            minSellingPrice: s.sellingPrice || 0,
+            maxSellingPrice: s.sellingPrice || 0,
+            minPurchasePrice: s.purchasePrice || 0,
+            maxPurchasePrice: s.purchasePrice || 0,
+            earliestExpiryDate: s.expiryDate,
+          });
+        }
+
+        const group = groupedMap.get(pId)!;
+        group.totalQuantity += s.quantity;
+        group.batches.push(s);
+
+        if (s.sellingPrice) {
+          group.minSellingPrice = group.minSellingPrice === 0 ? s.sellingPrice : Math.min(group.minSellingPrice, s.sellingPrice);
+          group.maxSellingPrice = Math.max(group.maxSellingPrice, s.sellingPrice);
+        }
+
+        if (s.purchasePrice) {
+          group.minPurchasePrice = group.minPurchasePrice === 0 ? s.purchasePrice : Math.min(group.minPurchasePrice, s.purchasePrice);
+          group.maxPurchasePrice = Math.max(group.maxPurchasePrice, s.purchasePrice);
+        }
+
+        if (s.expiryDate && (!group.earliestExpiryDate || new Date(s.expiryDate) < new Date(group.earliestExpiryDate))) {
+          group.earliestExpiryDate = s.expiryDate;
+        }
+      });
+
+      return {
+        stocks: Array.from(groupedMap.values()),
+        stats,
+        isGrouped: true,
+      };
+    }
+
     const totalStock = stocks.reduce((sum, s) => sum + s.quantity, 0);
 
     return {
       stocks,
       totalStock,
+      stats,
       productId,
     };
   }

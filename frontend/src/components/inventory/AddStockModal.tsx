@@ -1,5 +1,16 @@
+// frontend/src/components/inventory/AddStockModal.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { 
+  XMarkIcon, 
+  ArchiveBoxIcon, 
+  CircleStackIcon, 
+  CurrencyDollarIcon, 
+  CalendarDaysIcon,
+  DocumentTextIcon,
+  TagIcon,
+  ChevronRightIcon
+} from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import toast from "react-hot-toast";
 
@@ -32,7 +43,6 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
   const { data: products, isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["products-dropdown"],
     queryFn: async () => {
-      // GUNAKAN ENDPOINT BARU
       const response = await api.get("/products/all/dropdown");
       return response.data;
     },
@@ -57,11 +67,10 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      toast.success("Stok berhasil ditambahkan");
+      toast.success("Stok berhasil ditambahkan ke gudang");
       onSuccess();
     },
     onError: (error: any) => {
-      console.error("Add stock error:", error.response?.data);
       toast.error(error.response?.data?.message || "Gagal menambahkan stok");
     },
   });
@@ -70,11 +79,11 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     e.preventDefault();
 
     if (!formData.productId) {
-      toast.error("Pilih produk");
+      toast.error("Silakan pilih produk terlebih dahulu");
       return;
     }
     if (formData.quantity <= 0) {
-      toast.error("Jumlah harus lebih dari 0");
+      toast.error("Jumlah stok harus lebih dari 0");
       return;
     }
     if (formData.sellingPrice <= 0) {
@@ -103,194 +112,223 @@ const AddStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Tambah Stok Baru</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
+      <div className="bg-white rounded-[2.5rem] max-w-2xl w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-100 flex flex-col max-h-[90vh]">
+        {/* Modal Header */}
+        <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+          <div className="flex items-center gap-4">
+            <div className="bg-primary-500 p-2.5 rounded-2xl shadow-lg shadow-primary-500/20 text-white">
+              <PlusIcon className="h-6 w-6 stroke-[3]" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Tambah Stok Baru</h2>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Inventory Transaction</p>
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-3 bg-white border border-slate-100 text-slate-400 hover:text-rose-500 rounded-2xl transition-all shadow-sm hover:shadow-md"
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pilih Produk <span className="text-red-500">*</span>
-              </label>
-              <select
-                name="productId"
-                value={formData.productId}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                required
-                disabled={productsLoading}
-              >
-                <option value="">
-                  {productsLoading ? "Memuat produk..." : "Pilih Produk"}
-                </option>
-                {products?.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name} ({product.sku} - {product.unit})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Jumlah <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                name="quantity"
-                value={formData.quantity}
-                onChange={handleChange}
-                min="1"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Batch Code
-              </label>
-              <input
-                type="text"
-                name="batchCode"
-                value={formData.batchCode}
-                onChange={handleChange}
-                placeholder="Contoh: BATCH-001"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Kosongkan jika tidak ada batch
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanggal Kadaluarsa
-              </label>
-              <input
-                type="date"
-                name="expiryDate"
-                value={formData.expiryDate}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Kosongkan jika tidak ada tanggal kadaluarsa
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Harga Beli
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  name="purchasePrice"
-                  value={formData.purchasePrice}
-                  onChange={handleChange}
-                  min="0"
-                  step="100"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="0"
-                />
+        {/* Modal Body */}
+        <div className="p-8 overflow-y-auto custom-scrollbar">
+          <form id="add-stock-form" onSubmit={handleSubmit} className="space-y-8">
+            {/* Section 1: Product Info */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-primary-600 mb-2">
+                <ArchiveBoxIcon className="h-5 w-5" />
+                <span className="text-xs font-black uppercase tracking-[0.15em]">Informasi Produk</span>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Harga Jual <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  name="sellingPrice"
-                  value={formData.sellingPrice}
-                  onChange={handleChange}
-                  min="0"
-                  step="100"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="0"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Catatan
-              </label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                rows={2}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Contoh: Stok dari supplier, pembelian bulanan, dll"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-4">
-              <button
-                type="submit"
-                disabled={addStockMutation.isPending}
-                className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {addStockMutation.isPending ? (
-                  <span className="flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 mr-2"
-                      viewBox="0 0 24 24"
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Pilih Produk <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative group">
+                    <TagIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-primary-500 transition-colors" />
+                    <select
+                      name="productId"
+                      value={formData.productId}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-bold text-slate-700 appearance-none shadow-inner group-hover:bg-white"
+                      required
+                      disabled={productsLoading}
                     >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Menyimpan...
-                  </span>
-                ) : (
-                  "Tambah Stok"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Batal
-              </button>
+                      <option value="">{productsLoading ? "Memuat..." : "Cari & Pilih Produk"}</option>
+                      {products?.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} ({product.sku} - {product.unit})
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronRightIcon className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 pointer-events-none rotate-90" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Jumlah Stok <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative group text-center">
+                    <CircleStackIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-primary-500 transition-colors" />
+                    <input
+                      type="number"
+                      name="quantity"
+                      value={formData.quantity}
+                      onChange={handleChange}
+                      min="1"
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-black text-slate-700 shadow-inner group-hover:bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Kode Batch
+                  </label>
+                  <div className="relative group text-center">
+                    <DocumentTextIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-primary-500 transition-colors" />
+                    <input
+                      type="text"
+                      name="batchCode"
+                      value={formData.batchCode}
+                      onChange={handleChange}
+                      placeholder="BATCH-XXX"
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-bold text-slate-700 placeholder:text-slate-300 shadow-inner group-hover:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Pricing & Expiry */}
+            <div className="space-y-4 pt-4 border-t border-slate-50">
+               <div className="flex items-center gap-2 text-primary-600 mb-2">
+                <CurrencyDollarIcon className="h-5 w-5" />
+                <span className="text-xs font-black uppercase tracking-[0.15em]">Harga & Masa Berlaku</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Harga Beli
+                  </label>
+                  <div className="relative group">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300 text-sm group-focus-within:text-primary-500 transition-colors">Rp</span>
+                    <input
+                      type="number"
+                      name="purchasePrice"
+                      value={formData.purchasePrice}
+                      onChange={handleChange}
+                      min="0"
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-black text-slate-700 shadow-inner group-hover:bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Harga Jual <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative group text-center">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300 text-sm group-focus-within:text-primary-500 transition-colors">Rp</span>
+                    <input
+                      type="number"
+                      name="sellingPrice"
+                      value={formData.sellingPrice}
+                      onChange={handleChange}
+                      min="0"
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-black text-slate-700 shadow-inner group-hover:bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Tanggal Kadaluarsa
+                  </label>
+                  <div className="relative group text-center">
+                    <CalendarDaysIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-primary-500 transition-colors" />
+                    <input
+                      type="date"
+                      name="expiryDate"
+                      value={formData.expiryDate}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-bold text-slate-700 shadow-inner group-hover:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Notes */}
+            <div className="space-y-4 pt-4 border-t border-slate-50">
+               <div>
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                    Catatan Tambahan
+                  </label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleChange}
+                    rows={2}
+                    placeholder="Misal: Stok sisa pengiriman supplier A..."
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-medium text-slate-700 placeholder:text-slate-300 shadow-inner group-hover:bg-white"
+                  />
+                </div>
             </div>
           </form>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-8 border-t border-slate-50 bg-slate-50/30 flex gap-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-6 py-4 bg-white border border-slate-200 text-slate-400 font-black uppercase tracking-[0.2em] text-[11px] rounded-2xl transition-all hover:bg-slate-50 hover:text-slate-600 active:scale-[0.98]"
+          >
+            Batal
+          </button>
+          <button
+            form="add-stock-form"
+            type="submit"
+            disabled={addStockMutation.isPending}
+            className="flex-[2] px-6 py-4 bg-primary-600 text-white font-black uppercase tracking-[0.2em] text-[11px] rounded-2xl transition-all hover:bg-primary-500 hover:-translate-y-1 active:scale-[0.98] shadow-lg shadow-primary-500/20 disabled:opacity-50 disabled:translate-y-0 disabled:shadow-none inline-flex items-center justify-center gap-3"
+          >
+            {addStockMutation.isPending ? (
+              <>
+                <ArrowPathIcon className="h-4 w-4 animate-spin stroke-[3]" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                Simpan & Update Stok
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>
   );
 };
+
+// UI Components
+const PlusIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+  </svg>
+);
+
+const ArrowPathIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
 
 export default AddStockModal;

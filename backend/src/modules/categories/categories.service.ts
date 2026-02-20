@@ -29,11 +29,10 @@ export class CategoriesService {
   async findAll(search?: string, page: number = 1, limit: number = 20) {
     const query = this.categoryRepository
       .createQueryBuilder('category')
-      .leftJoinAndSelect('category.products', 'products')
       .loadRelationCountAndMap('category.productCount', 'category.products');
 
     if (search) {
-      query.where('category.name LIKE :search OR category.description LIKE :search', {
+      query.where('LOWER(category.name) LIKE LOWER(:search) OR LOWER(category.description) LIKE LOWER(:search)', {
         search: `%${search}%`,
       });
     }

@@ -1,12 +1,16 @@
-// frontend/src/pages/admin/Categories.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PlusIcon,
   MagnifyingGlassIcon,
   PencilIcon,
   TrashIcon,
-  XMarkIcon,
+  TagIcon,
+  Squares2X2Icon,
+  XCircleIcon,
+
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import toast from "react-hot-toast";
@@ -49,7 +53,7 @@ const Categories: React.FC = () => {
     null,
   );
 
-  // Pagination states - SEMENTARA PAKAI PAGINATION BIASA
+  // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [limit] = useState(10);
 
@@ -65,8 +69,8 @@ const Categories: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // ========== FETCH CATEGORIES DENGAN DEPENDENCY YANG JELAS ==========
-  const { data, isLoading, isFetching, refetch, error } =
+  // Fetch categories
+  const { data, isLoading, isFetching, refetch } =
     useQuery<CategoriesResponse>({
       queryKey: ["admin-categories", debouncedSearch, currentPage],
       queryFn: async () => {
@@ -77,31 +81,10 @@ const Categories: React.FC = () => {
         params.append("sortBy", "createdAt");
         params.append("sortOrder", "desc");
 
-        console.log("Fetching with params:", params.toString());
-        console.log("Current page:", currentPage);
-        console.log("Search:", debouncedSearch);
-
         const response = await api.get(`/categories?${params.toString()}`);
-        console.log("Response data:", response.data);
         return response.data;
       },
-      // Pastikan query jalan
-      enabled: true,
-      // Refetch on mount
-      refetchOnMount: true,
-      // Refetch on window focus
-      refetchOnWindowFocus: true,
-      // Stale time 0 agar selalu fetch ulang
-      staleTime: 0,
     });
-
-  // Log data untuk debugging
-  useEffect(() => {
-    console.log("Query data:", data);
-    console.log("Is Loading:", isLoading);
-    console.log("Is Fetching:", isFetching);
-    console.log("Error:", error);
-  }, [data, isLoading, isFetching, error]);
 
   // Create category mutation
   const createMutation = useMutation({
@@ -110,7 +93,6 @@ const Categories: React.FC = () => {
       return response.data;
     },
     onSuccess: () => {
-      // Invalidate query untuk refetch
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       setShowModal(false);
       resetForm();
@@ -180,6 +162,11 @@ const Categories: React.FC = () => {
     setShowModal(true);
   };
 
+  const closeModal = () => {
+    setShowModal(false);
+    resetForm();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -220,152 +207,139 @@ const Categories: React.FC = () => {
     setCurrentPage(page);
   };
 
-  if (isLoading && !data) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-red-600 text-center">
-          <p className="text-lg font-semibold">Error loading data</p>
-          <p className="text-sm">
-            {(error as any)?.message || "Terjadi kesalahan"}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-          >
-            Coba Lagi
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const categories = data?.data || [];
   const meta = data?.meta;
   const totalPages = meta?.totalPages || 1;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Manajemen Kategori
-          </h1>
-          <p className="text-gray-600 mt-1">Kelola kategori produk</p>
+    <div className="space-y-8 animate-in fade-in duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-primary-900 p-8 text-white shadow-2xl">
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-primary-500/20 backdrop-blur-md p-2 rounded-xl border border-primary-500/30">
+                <TagIcon className="h-6 w-6 text-primary-400" />
+              </div>
+              <span className="text-primary-400 font-bold uppercase tracking-widest text-xs">Categories Management</span>
+            </div>
+            <h1 className="text-4xl font-black tracking-tight">Kategori Produk</h1>
+            <p className="text-slate-400 mt-2 font-medium flex items-center gap-2">
+              <Squares2X2Icon className="h-4 w-4" />
+              Atur dan klasifikasikan produk toko Anda
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
+            <div className="bg-white/5 backdrop-blur-md border border-white/10 p-4 rounded-2xl">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Kategori</p>
+              <p className="text-2xl font-black">{meta?.total || 0}</p>
+            </div>
+            <button
+              onClick={() => handleOpenModal()}
+              className="group bg-primary-500 hover:bg-primary-400 text-white px-8 py-4 rounded-2xl font-black text-lg transition-all shadow-xl shadow-primary-500/20 hover:shadow-primary-500/40 hover:-translate-y-1 flex items-center gap-3"
+            >
+              <PlusIcon className="h-6 w-6 transition-transform group-hover:rotate-90" />
+              Tambah Kategori
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <PlusIcon className="h-5 w-5" />
-          Tambah Kategori
-        </button>
+
+        {/* Decorative Elements */}
+        <div className="absolute -right-20 -top-20 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-2xl shadow-sm p-6">
-        <div className="relative max-w-md">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+      {/* Modern Search Section */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl border border-white p-6 relative z-20 -mt-12 mx-4">
+        <div className="max-w-md relative group">
+          <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-primary-500 transition-colors" />
           <input
             type="text"
             placeholder="Cari kategori..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-medium text-slate-700"
           />
         </div>
       </div>
 
-      {/* Results Info */}
-      <div className="flex justify-between items-center px-4">
-        <p className="text-sm text-gray-600">
-          Menampilkan {categories.length} dari {meta?.total || 0} kategori
-          {searchTerm && ` (pencarian: "${searchTerm}")`}
-        </p>
-        {searchTerm && (
-          <button
-            onClick={() => setSearchTerm("")}
-            className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
-          >
-            <XMarkIcon className="h-4 w-4" />
-            Hapus Filter
-          </button>
-        )}
-      </div>
-
-      {/* Categories Table */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      {/* Categories Table Container */}
+      <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden relative">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Nama Kategori
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Deskripsi
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Jumlah Produk
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Tanggal Dibuat
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
-                  Aksi
-                </th>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50">
+                <th className="py-5 px-8 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Kategori</th>
+                <th className="py-5 px-8 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Deskripsi</th>
+                <th className="py-5 px-8 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Statistik</th>
+                <th className="py-5 px-8 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Dibuat Pada</th>
+                <th className="py-5 px-8 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
-            <tbody>
-              {categories.length === 0 ? (
+            <tbody className="divide-y divide-slate-50">
+              {isLoading && !data ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500">
-                    {searchTerm
-                      ? "Tidak ada kategori yang sesuai pencarian"
-                      : "Belum ada kategori"}
+                  <td colSpan={5} className="py-20 text-center">
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Memuat Kategori...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : categories.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-20 text-center">
+                    <div className="bg-slate-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                      <TagIcon className="h-10 w-10 text-slate-300" />
+                    </div>
+                    <p className="text-slate-900 font-black text-lg">Tidak Ada Kategori</p>
+                    <p className="text-slate-400 font-medium">Tambah kategori baru untuk memulai</p>
                   </td>
                 </tr>
               ) : (
                 categories.map((category) => (
                   <tr
                     key={category.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
+                    className="group hover:bg-slate-50/80 transition-all duration-300"
                   >
-                    <td className="py-4 px-6 font-medium">{category.name}</td>
-                    <td className="py-4 px-6 text-gray-600">
-                      {category.description || "-"}
+                    <td className="py-6 px-8 whitespace-nowrap">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 bg-slate-100 rounded-2xl flex items-center justify-center text-primary-500 shadow-inner group-hover:scale-110 transition-transform">
+                          <TagIcon className="h-6 w-6" />
+                        </div>
+                        <p className="font-black text-slate-900 group-hover:text-primary-600 transition-colors uppercase tracking-tight text-sm">
+                          {category.name}
+                        </p>
+                      </div>
                     </td>
-                    <td className="py-4 px-6">
-                      <span className="px-2 py-1 bg-primary-100 text-primary-600 rounded-full text-xs">
-                        {category.productCount || 0} produk
+                    <td className="py-6 px-8">
+                      <p className="text-slate-500 font-medium text-xs line-clamp-1 max-w-xs">{category.description || "-"}</p>
+                    </td>
+                    <td className="py-6 px-8 text-center">
+                      <span className="bg-primary-50 text-primary-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                        {category.productCount || 0} Produk
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-sm text-gray-500">
-                      {new Date(category.createdAt).toLocaleDateString(
-                        "id-ID",
-                        { day: "numeric", month: "long", year: "numeric" },
-                      )}
+                    <td className="py-6 px-8 text-center text-xs text-slate-400 font-bold">
+                      {new Date(category.createdAt).toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </td>
-                    <td className="py-4 px-6">
-                      <div className="flex gap-2">
+                    <td className="py-6 px-8 text-right">
+                      <div className="flex justify-end gap-2">
                         <button
                           onClick={() => handleOpenModal(category)}
-                          className="text-blue-600 hover:text-blue-700"
+                          className="h-10 w-10 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center hover:bg-sky-600 hover:text-white transition-all shadow-sm"
                           title="Edit"
                         >
                           <PencilIcon className="h-5 w-5" />
                         </button>
                         <button
                           onClick={() => handleDelete(category)}
-                          className="text-red-600 hover:text-red-700"
+                          className="h-10 w-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all shadow-sm"
                           title="Hapus"
                         >
                           <TrashIcon className="h-5 w-5" />
@@ -379,162 +353,160 @@ const Categories: React.FC = () => {
           </table>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-2 py-4 border-t border-gray-200">
+        {/* Footer & Pagination */}
+        <div className="bg-slate-50 px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-6 border-t border-slate-100">
+          <div className="text-slate-500 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+            <span className="text-primary-600 font-black">{categories.length}</span>
+            dari {meta?.total || 0} Total Kategori
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 1 || isFetching}
-              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="p-2 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-primary-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:shadow-md"
             >
-              Previous
+              <ChevronLeftIcon className="h-5 w-5" />
             </button>
-
-            <span className="px-4 py-1">
-              Halaman {currentPage} dari {totalPages}
-            </span>
-
+            <div className="flex gap-1">
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => goToPage(i + 1)}
+                  className={`w-9 h-9 rounded-xl font-black text-xs transition-all ${
+                    currentPage === i + 1
+                      ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30"
+                      : "bg-white text-slate-400 hover:bg-slate-50"
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage === totalPages || isFetching}
-              className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="p-2 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-primary-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:shadow-md"
             >
-              Next
+              <ChevronRightIcon className="h-5 w-5" />
             </button>
           </div>
-        )}
-
-        {/* Loading indicator */}
-        {isFetching && (
-          <div className="flex justify-center py-4 border-t border-gray-200">
-            <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Premium Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in zoom-in duration-300">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-lg w-full overflow-hidden border border-white flex flex-col">
+            {/* Modal Header */}
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 bg-primary-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-primary-500/20">
+                  {editingCategory ? <PencilIcon className="h-8 w-8" /> : <PlusIcon className="h-8 w-8" />}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">{editingCategory ? "Edit Kategori" : "Kategori Baru"}</h2>
+                  <p className="text-slate-400 font-medium text-sm">Lengkapi detail kategori produk</p>
+                </div>
+              </div>
+              <button
+                onClick={closeModal}
+                className="h-10 w-10 text-slate-400 hover:bg-slate-100 rounded-full flex items-center justify-center transition-all"
+              >
+                <XCircleIcon className="h-8 w-8" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
             <form onSubmit={handleSubmit}>
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold">
-                    {editingCategory ? "Edit Kategori" : "Tambah Kategori"}
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    <XMarkIcon className="h-6 w-6" />
-                  </button>
+              <div className="p-8 space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">
+                    Nama Kategori <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-bold text-slate-700 placeholder:text-slate-300"
+                    placeholder="Contoh: Bumbu Rendang"
+                    autoFocus
+                  />
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nama Kategori <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder="Contoh: Bumbu Instan"
-                      autoFocus
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Deskripsi (Opsional)
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          description: e.target.value,
-                        })
-                      }
-                      rows={3}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder="Deskripsi kategori..."
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">
+                    Deskripsi
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={4}
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none font-bold text-slate-700 placeholder:text-slate-300"
+                    placeholder="Jelaskan secara singkat mengenai kategori ini..."
+                  />
                 </div>
+              </div>
 
-                <div className="flex gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
-                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={
-                      createMutation.isPending || updateMutation.isPending
-                    }
-                    className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-                  >
-                    {createMutation.isPending || updateMutation.isPending
-                      ? "Menyimpan..."
-                      : "Simpan"}
-                  </button>
-                </div>
+              {/* Modal Footer */}
+              <div className="p-8 bg-slate-50/50 border-t border-slate-50 flex gap-4">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 px-6 py-4 rounded-2xl font-black text-slate-400 hover:bg-slate-100 transition-all"
+                >
+                  BATAL
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="flex-[2] bg-primary-600 text-white px-6 py-4 rounded-2xl font-black shadow-xl shadow-primary-500/20 hover:bg-primary-500 hover:-translate-y-1 transition-all disabled:opacity-50"
+                >
+                  {createMutation.isPending || updateMutation.isPending ? "MENYIMPAN..." : "SIMPAN KATEGORI"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Modern Delete Confirmation */}
       {showDeleteModal && deletingCategory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full">
-            <div className="p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">
-                Hapus Kategori
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Apakah Anda yakin ingin menghapus kategori{" "}
-                <span className="font-semibold">{deletingCategory.name}</span>?
-                <br />
-                <span className="text-sm text-red-500">
-                  Kategori yang memiliki produk tidak dapat dihapus.
-                </span>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in zoom-in duration-300">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-md w-full p-8 border border-white relative overflow-hidden">
+            <div className="relative z-10 text-center">
+              <div className="h-20 w-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner ring-8 ring-rose-50/50">
+                <TrashIcon className="h-10 w-10" />
+              </div>
+              <h3 className="text-2xl font-black text-slate-900 mb-2">Hapus Kategori?</h3>
+              <p className="text-slate-500 font-medium mb-8 px-4">
+                Apakah Anda yakin ingin menghapus kategori <span className="font-black text-slate-900">"{deletingCategory.name}"</span>?
+                {deletingCategory.productCount && deletingCategory.productCount > 0 && (
+                   <span className="block mt-4 text-xs bg-rose-50 text-rose-600 p-3 rounded-xl border border-rose-100">
+                     <span className="block font-black uppercase tracking-widest mb-1 text-[10px]">Peringatan</span>
+                     Kategori ini memiliki {deletingCategory.productCount} produk dan tidak dapat dihapus sebelum produknya dipindahkan.
+                   </span>
+                )}
               </p>
 
-              <div className="flex gap-3">
+              <div className="flex gap-4">
                 <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setDeletingCategory(null);
-                  }}
-                  className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 px-6 py-4 rounded-2xl font-black text-slate-400 hover:bg-slate-50 transition-all"
                 >
-                  Batal
+                  BATAL
                 </button>
                 <button
                   onClick={confirmDelete}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                  disabled={deleteMutation.isPending || (deletingCategory.productCount ? deletingCategory.productCount > 0 : false)}
+                  className="flex-[1.5] bg-rose-600 text-white px-6 py-4 rounded-2xl font-black shadow-xl shadow-rose-500/20 hover:bg-rose-500 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
                 >
-                  {deleteMutation.isPending ? "Menghapus..." : "Hapus"}
+                  {deleteMutation.isPending ? "MENGHAPUS..." : "YA, HAPUS"}
                 </button>
               </div>
             </div>
+            
+            <div className="absolute -right-16 -top-16 w-32 h-32 bg-rose-50 rounded-full opacity-50"></div>
           </div>
         </div>
       )}

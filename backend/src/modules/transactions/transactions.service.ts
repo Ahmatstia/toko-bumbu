@@ -419,14 +419,22 @@ export class TransactionsService {
 
         for (const item of validatedItems) {
           for (const allocation of item.allocations) {
-            // Kurangi stok langsung
+            // Kurangi stok menggunakan atomic update
             await queryRunner.manager.query(
               `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
               [allocation.quantity, allocation.stock.id, allocation.quantity],
             );
 
+            // Ambil data stok terbaru SESUDAH update untuk inventory log yang akurat
+            const updatedStockResult = await queryRunner.manager.query(
+              `SELECT quantity FROM stocks WHERE id = ?`,
+              [allocation.stock.id]
+            );
+            const stockAfter = updatedStockResult[0]?.quantity ?? 0;
+            const stockBefore = stockAfter + allocation.quantity;
+
             // Catat ke inventory
-            const inventoryId = require('crypto').randomUUID?.() || require('uuid').v4();
+            const inventoryId = require('uuid').v4(); 
             await queryRunner.manager.query(
               `INSERT INTO inventory (
               id, product_id, type, quantity, stock_before, stock_after, 
@@ -438,8 +446,8 @@ export class TransactionsService {
                 item.product.id,
                 'OUT',
                 -allocation.quantity,
-                allocation.stock.quantity,
-                allocation.stock.quantity - allocation.quantity,
+                stockBefore,
+                stockAfter,
                 allocation.stock.batchCode,
                 allocation.stock.expiryDate,
                 allocation.stock.purchasePrice,

@@ -34,9 +34,21 @@ export class InventoryController {
   async getStock(
     @Query('productId') productId?: string,
     @Query('batchCode') batchCode?: string,
-    @Query('search') search?: string, // <-- TAMBAHKAN PARAMETER SEARCH
+    @Query('search') search?: string,
+    @Query('lowStock') lowStock?: string,
+    @Query('expiringSoon') expiringSoon?: string,
+    @Query('days') days?: string,
+    @Query('grouped') grouped?: string,
   ) {
-    return this.inventoryService.getStock(productId, batchCode, search);
+    return this.inventoryService.getStock(
+      productId,
+      batchCode,
+      search,
+      lowStock === 'true',
+      expiringSoon === 'true',
+      days ? parseInt(days) : 30,
+      grouped === 'true',
+    );
   }
 
   @Get('stock/low')
