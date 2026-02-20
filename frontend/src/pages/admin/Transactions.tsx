@@ -127,13 +127,7 @@ const Transactions: React.FC = () => {
       params.append("page", page.toString());
       params.append("limit", "20");
 
-      console.log("Fetching page:", page, "with filters:", {
-        status: statusFilter,
-        method: methodFilter,
-        date: dateFilter,
-        search: debouncedSearch,
-        orderType: orderTypeFilter,
-      });
+      console.log("Fetching page:", page); // Keep minimal log if helpful, but original was bulky
 
       const response = await api.get(`/transactions?${params.toString()}`);
       return response.data;
@@ -145,11 +139,9 @@ const Transactions: React.FC = () => {
     if (data) {
       if (page === 1) {
         setAllTransactions(data.data || []);
-        console.log("Page 1 data:", data.data?.length);
       } else {
         setAllTransactions((prev) => {
           const newData = [...prev, ...(data.data || [])];
-          console.log("Appending page", page, "total now:", newData.length);
           return newData;
         });
       }
@@ -163,7 +155,6 @@ const Transactions: React.FC = () => {
   const loadMoreTransactions = useCallback(() => {
     if (isLoadingMore || !hasMore) return;
 
-    console.log("Loading more... Next page:", page + 1);
     setIsLoadingMore(true);
     setPage((prev) => prev + 1);
   }, [isLoadingMore, hasMore, page]);

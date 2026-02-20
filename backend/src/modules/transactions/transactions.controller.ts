@@ -25,12 +25,14 @@ export class TransactionsController {
 
   // ========== PUBLIC ENDPOINTS (Tempatkan PALING ATAS) ==========
   @Get('weekly')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async getWeeklySales() {
     return this.transactionsService.getWeeklySales();
   }
 
   @Get('monthly')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async getMonthlySales() {
     return this.transactionsService.getMonthlySales();
@@ -47,12 +49,14 @@ export class TransactionsController {
   }
 
   @Get('payment-methods')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async getPaymentMethods() {
     return this.transactionsService.getPaymentMethods();
   }
 
   @Get('today')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async getTodaySales() {
     return this.transactionsService.getTodaySales();
