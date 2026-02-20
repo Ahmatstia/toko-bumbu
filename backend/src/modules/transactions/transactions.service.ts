@@ -240,30 +240,65 @@ export class TransactionsService {
     return result;
   }
 
-  async getMonthlySales() {
-    const endDate = new Date();
-    const startDate = subDays(endDate, 30);
+  async getMonthlySales(startDate?: Date, endDate?: Date) {
+    if (!startDate) {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    if (!endDate) {
+      endDate = new Date();
+    }
+
+    endDate.setHours(23, 59, 59, 999);
 
     const sales = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .select('WEEK(transaction.createdAt)', 'week')
-      .addSelect('MIN(transaction.createdAt)', 'startDate')
+      .select("DATE_FORMAT(transaction.created_at, '%Y-%m')", 'month') // <-- PERBAIKAN: created_at
+      .addSelect('COUNT(transaction.id)', 'count')
       .addSelect('SUM(transaction.total)', 'total')
-      .where('transaction.createdAt BETWEEN :start AND :end', { start: startDate, end: endDate })
+      .where('transaction.created_at BETWEEN :start AND :end', {
+        // <-- PERBAIKAN: created_at
+        start: startDate,
+        end: endDate,
+      })
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .groupBy('WEEK(transaction.createdAt)')
-      .orderBy('week', 'ASC')
+      .groupBy("DATE_FORMAT(transaction.created_at, '%Y-%m')") // <-- PERBAIKAN: created_at
+      .orderBy('month', 'ASC')
       .getRawMany();
 
-    const result: { week: string; total: number }[] = []; // <-- TAMBAHKAN TYPE
-    for (let i = 0; i < sales.length; i++) {
-      result.push({
-        week: `Week ${i + 1}`,
-        total: parseFloat(sales[i].total),
-      });
+    return sales;
+  }
+
+  async getDailySales(startDate?: Date, endDate?: Date) {
+    if (!startDate) {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
     }
 
-    return result;
+    if (!endDate) {
+      endDate = new Date();
+    }
+
+    // Set endDate ke akhir hari
+    endDate.setHours(23, 59, 59, 999);
+
+    const sales = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .select('DATE(transaction.created_at)', 'date') // <-- PERBAIKAN: created_at
+      .addSelect('COUNT(transaction.id)', 'count')
+      .addSelect('SUM(transaction.total)', 'total')
+      .where('transaction.created_at BETWEEN :start AND :end', {
+        // <-- PERBAIKAN: created_at
+        start: startDate,
+        end: endDate,
+      })
+      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
+      .groupBy('DATE(transaction.created_at)') // <-- PERBAIKAN: created_at
+      .orderBy('date', 'ASC')
+      .getRawMany();
+
+    return sales;
   }
 
   async getPaymentMethods() {

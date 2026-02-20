@@ -1,3 +1,4 @@
+// backend/src/modules/products/products.controller.ts
 import {
   Controller,
   Get,
@@ -8,6 +9,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -22,7 +24,7 @@ import { Public } from '../../common/decorators/public.decorator';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  // ========== ROUTE SPESIFIK (Tempatkan PALING ATAS) ==========
+  // ========== ROUTE SPESIFIK ==========
   @Get('top')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async getTopProducts(@Query('limit') limit?: string) {
@@ -45,6 +47,32 @@ export class ProductsController {
     );
   }
 
+  // ========== PERBAIKAN: ENDPOINT TOP SELLING ==========
+  @Get('top-selling')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async getTopSelling(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('limit') limit?: string,
+  ) {
+    console.log('getTopSelling called with:', { startDate, endDate, limit });
+
+    const startDateObj = startDate ? new Date(startDate) : undefined;
+    const endDateObj = endDate ? new Date(endDate) : undefined;
+    const limitNum = limit ? parseInt(limit) : 10;
+
+    // Validasi tanggal
+    if (startDateObj && isNaN(startDateObj.getTime())) {
+      throw new BadRequestException('Invalid startDate format');
+    }
+    if (endDateObj && isNaN(endDateObj.getTime())) {
+      throw new BadRequestException('Invalid endDate format');
+    }
+
+    return this.productsService.getTopSelling(startDateObj, endDateObj, limitNum);
+  }
+
   @Get('all/dropdown')
   @Public()
   async findAllForDropdown() {
@@ -59,7 +87,7 @@ export class ProductsController {
     return this.productsService.create(createProductDto);
   }
 
-  // ========== LIST ENDPOINTS (Tempatkan SETELAH route spesifik) ==========
+  // ========== LIST ENDPOINTS ==========
   @Get()
   @Public()
   async findAll(
@@ -83,7 +111,7 @@ export class ProductsController {
     );
   }
 
-  // ========== DETAIL ENDPOINTS (Tempatkan PALING BAWAH) ==========
+  // ========== DETAIL ENDPOINTS ==========
   @Get(':id')
   @Public()
   findOne(@Param('id') id: string) {

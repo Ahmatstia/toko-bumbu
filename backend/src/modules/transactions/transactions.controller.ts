@@ -36,6 +36,16 @@ export class TransactionsController {
     return this.transactionsService.getMonthlySales();
   }
 
+  @Get('daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async getDailySales(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.transactionsService.getDailySales(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
   @Get('payment-methods')
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async getPaymentMethods() {

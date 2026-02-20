@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+// backend/src/modules/products/products.service.ts
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Product } from './entities/product.entity';
@@ -83,7 +89,7 @@ export class ProductsService {
     page: number = 1,
     limit: number = 10,
     isActive?: boolean,
-    isPublic: boolean = false, // Parameter untuk membedakan public/admin
+    isPublic: boolean = false,
   ) {
     const query = this.productRepository
       .createQueryBuilder('product')
@@ -100,12 +106,9 @@ export class ProductsService {
       );
     }
 
-    // FILTER UNTUK PUBLIC - HANYA PRODUK AKTIF
     if (isPublic) {
       query.andWhere('product.isActive = :isActive', { isActive: true });
-    }
-    // FILTER UNTUK ADMIN
-    else if (isActive !== undefined) {
+    } else if (isActive !== undefined) {
       query.andWhere('product.isActive = :isActive', { isActive });
     }
 
@@ -126,12 +129,71 @@ export class ProductsService {
     };
   }
 
+  // ========== PERBAIKAN: METHOD GET TOP SELLING ==========
+  async getTopSelling(startDate?: Date, endDate?: Date, limit: number = 10) {
+    try {
+      console.log('Getting top selling products...');
+      console.log('StartDate:', startDate);
+      console.log('EndDate:', endDate);
+      console.log('Limit:', limit);
+
+      // Gunakan query builder dengan raw SQL join
+      const query = this.productRepository
+        .createQueryBuilder('product')
+        .leftJoin('transaction_items', 'item', 'item.product_id = product.id')
+        .leftJoin('transactions', 'transaction', 'transaction.id = item.transaction_id')
+        .select('product.id', 'id')
+        .addSelect('product.name', 'name')
+        .addSelect('product.image_url', 'image')
+        .addSelect('COALESCE(SUM(item.quantity), 0)', 'sold')
+        .addSelect('COALESCE(SUM(item.subtotal), 0)', 'revenue')
+        .groupBy('product.id')
+        .orderBy('sold', 'DESC')
+        .limit(limit);
+
+      if (startDate) {
+        query.andWhere('transaction.created_at >= :startDate', {
+          startDate: startDate,
+        });
+      }
+
+      if (endDate) {
+        // Buat copy date agar tidak mengubah original
+        const endDateCopy = new Date(endDate);
+        endDateCopy.setHours(23, 59, 59, 999);
+
+        query.andWhere('transaction.created_at <= :endDate', {
+          endDate: endDateCopy,
+        });
+      }
+
+      // Hanya transaksi COMPLETED
+      query.andWhere('transaction.status = :status', { status: 'COMPLETED' });
+
+      console.log('SQL:', query.getSql());
+
+      const results = await query.getRawMany();
+      console.log('Results:', results);
+
+      return results.map((item) => ({
+        id: item.id,
+        name: item.name,
+        image: item.image,
+        sold: parseInt(item.sold) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+      }));
+    } catch (error) {
+      console.error('Error in getTopSelling:', error);
+      throw error;
+    }
+  }
+
   // METHOD KHUSUS UNTUK PUBLIC
   async findAllPublic(categoryId?: string, search?: string, page: number = 1, limit: number = 12) {
     return this.findAll(categoryId, search, page, limit, undefined, true);
   }
 
-  // METHOD BARU: Untuk dropdown (ambil semua produk tanpa pagination)
+  // METHOD UNTUK DROPDOWN
   async findAllForDropdown() {
     const products = await this.productRepository.find({
       relations: ['category'],
@@ -158,12 +220,14 @@ export class ProductsService {
   async getTopProducts(limit: number = 5) {
     const products = await this.productRepository
       .createQueryBuilder('product')
-      .leftJoin('transaction_items', 'item', 'item.productId = product.id')
+      .leftJoin('transaction_items', 'item', 'item.product_id = product.id')
+      .leftJoin('transactions', 'transaction', 'transaction.id = item.transaction_id')
       .select('product.id', 'id')
       .addSelect('product.name', 'name')
       .addSelect('product.image_url', 'image')
       .addSelect('SUM(item.quantity)', 'sold')
       .addSelect('SUM(item.subtotal)', 'revenue')
+      .where('transaction.status = :status', { status: 'COMPLETED' })
       .groupBy('product.id')
       .orderBy('sold', 'DESC')
       .limit(limit)
@@ -175,7 +239,6 @@ export class ProductsService {
   async update(id: string, updateProductDto: UpdateProductDto) {
     const product = await this.findOne(id);
 
-    // Kalau ganti category, validasi
     if (updateProductDto.categoryId && updateProductDto.categoryId !== product.categoryId) {
       const category = await this.categoryRepository.findOne({
         where: { id: updateProductDto.categoryId },
@@ -185,13 +248,9 @@ export class ProductsService {
       }
     }
 
-    // Hapus categoryId dari object sebelum assign
     const { categoryId, ...updateData } = updateProductDto;
-
-    // Assign data yang akan diupdate
     Object.assign(product, updateData);
 
-    // Set categoryId baru jika ada
     if (updateProductDto.categoryId) {
       product.categoryId = updateProductDto.categoryId;
     }
