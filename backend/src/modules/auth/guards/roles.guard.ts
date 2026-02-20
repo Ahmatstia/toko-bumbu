@@ -1,4 +1,5 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+// backend/src/auth/guards/roles.guard.ts
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '../../users/entities/user.entity';
 
@@ -12,28 +13,24 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    // Jika tidak ada role yang diperlukan, semua boleh akses
     if (!requiredRoles) {
-      return true; // Tidak perlu role khusus
+      return true;
     }
 
     const { user } = context.switchToHttp().getRequest();
 
     // Kalau user tidak login, return false
-    if (!user) return false;
-
-    // OWNER bisa akses semuanya
-    if (user.role === UserRole.OWNER) return true;
-
-    // MANAGER bisa akses endpoint yang butuh role MANAGER atau lebih rendah
-    if (user.role === UserRole.MANAGER) {
-      return (
-        requiredRoles.includes(UserRole.MANAGER) ||
-        requiredRoles.includes(UserRole.CASHIER) ||
-        requiredRoles.includes(UserRole.STAFF)
-      );
+    if (!user) {
+      throw new ForbiddenException('Anda harus login terlebih dahulu');
     }
 
-    // CASHIER dan STAFF cuma bisa akses sesuai role-nya
+    // OWNER bisa akses semuanya
+    if (user.role === UserRole.OWNER) {
+      return true;
+    }
+
+    // Untuk role lainnya, harus cocok persis dengan requiredRoles
     return requiredRoles.includes(user.role);
   }
 }

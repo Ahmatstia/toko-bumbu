@@ -29,20 +29,70 @@ const AdminLayout: React.FC = () => {
     navigate("/login");
   };
 
-  const navigation = [
-    { name: "Dashboard", href: "/admin", icon: HomeIcon },
-    { name: "POS / Kasir", href: "/admin/pos", icon: ShoppingCartIcon },
-    { name: "Transaksi", href: "/admin/transactions", icon: DocumentTextIcon },
-    { name: "Produk", href: "/admin/products", icon: ShoppingBagIcon },
-    { name: "Kategori", href: "/admin/categories", icon: TagIcon },
-    { name: "Stok", href: "/admin/inventory", icon: CubeIcon },
-    { name: "Laporan", href: "/admin/reports", icon: ChartBarIcon },
-    { name: "Customers", href: "/admin/customers", icon: UsersIcon },
+  // ========== PERBAIKAN: Filter menu berdasarkan role ==========
+  const getNavigationByRole = () => {
+    const allMenus = [
+      {
+        name: "Dashboard",
+        href: "/admin",
+        icon: HomeIcon,
+        roles: ["OWNER", "MANAGER", "CASHIER", "STAFF"],
+      },
+      {
+        name: "POS / Kasir",
+        href: "/admin/pos",
+        icon: ShoppingCartIcon,
+        roles: ["OWNER", "MANAGER", "CASHIER"],
+      },
+      {
+        name: "Transaksi",
+        href: "/admin/transactions",
+        icon: DocumentTextIcon,
+        roles: ["OWNER", "MANAGER", "CASHIER"],
+      },
+      {
+        name: "Produk",
+        href: "/admin/products",
+        icon: ShoppingBagIcon,
+        roles: ["OWNER", "MANAGER", "STAFF"],
+      },
+      {
+        name: "Kategori",
+        href: "/admin/categories",
+        icon: TagIcon,
+        roles: ["OWNER", "MANAGER", "STAFF"],
+      },
+      {
+        name: "Stok",
+        href: "/admin/inventory",
+        icon: CubeIcon,
+        roles: ["OWNER", "MANAGER", "STAFF"],
+      },
+      {
+        name: "Laporan",
+        href: "/admin/reports",
+        icon: ChartBarIcon,
+        roles: ["OWNER", "MANAGER"],
+      },
+      {
+        name: "Customers",
+        href: "/admin/customers",
+        icon: UsersIcon,
+        roles: ["OWNER", "MANAGER"],
+      },
+      {
+        name: "Staff",
+        href: "/admin/staff",
+        icon: UsersIcon,
+        roles: ["OWNER"],
+      },
+    ];
 
-    ...(role === "OWNER"
-      ? [{ name: "Staff", href: "/admin/staff", icon: UsersIcon }]
-      : []),
-  ];
+    // Filter menu berdasarkan role user
+    return allMenus.filter((menu) => menu.roles.includes(role || ""));
+  };
+
+  const navigation = getNavigationByRole();
 
   return (
     <div className="min-h-screen flex bg-gray-100">

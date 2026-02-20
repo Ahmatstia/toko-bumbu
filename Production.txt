@@ -1,0 +1,12 @@
+# 1. Matikan synchronize di database
+synchronize: false
+
+# 2. Gunakan environment variables
+DB_PASSWORD=your_secure_password
+JWT_SECRET=your_secret_key
+
+# 3. Build frontend
+npm run build
+
+# 4. Gunakan PM2 untuk backend
+pm2 start dist/main.js --name bumbuku-backend

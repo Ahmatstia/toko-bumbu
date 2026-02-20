@@ -1,3 +1,4 @@
+// frontend/src/pages/public/Home.tsx
 import React from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -52,7 +53,7 @@ const formatPrice = (price: any) => {
 };
 
 const Home: React.FC = () => {
-  // Fetch categories
+  // ========== PERBAIKAN: FETCH CATEGORIES DENGAN SAFE CHECK ==========
   const {
     data: categoriesData,
     isLoading: categoriesLoading,
@@ -61,7 +62,21 @@ const Home: React.FC = () => {
     queryKey: ["home-categories"],
     queryFn: async () => {
       const response = await api.get("/categories");
-      return response.data;
+      const data = response.data;
+
+      // Jika data adalah array, return langsung
+      if (Array.isArray(data)) {
+        return data;
+      }
+
+      // Jika data adalah object dengan properti data (pagination)
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+
+      // Fallback: return array kosong
+      console.warn("Categories response is not an array:", data);
+      return [];
     },
   });
 
@@ -125,8 +140,9 @@ const Home: React.FC = () => {
     fetchStockForProducts();
   }, [productsData]);
 
-  const categories: Category[] = categoriesData || [];
-  const products: ProductWithPrice[] = productsWithPrice;
+  // ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ==========
+  const categories = Array.isArray(categoriesData) ? categoriesData : [];
+  const products = productsWithPrice;
 
   // Loading state
   if (categoriesLoading || productsLoading) {
