@@ -35,6 +35,7 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   barcode?: string;
+  imageUrl?: string;
 
   @IsNumber()
   @Min(0)

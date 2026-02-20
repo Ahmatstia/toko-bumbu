@@ -10,7 +10,13 @@ import {
   UseGuards,
   Query,
   BadRequestException,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -20,11 +26,27 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { Public } from '../../common/decorators/public.decorator';
 
+// Konfigurasi penyimpanan file
+const storage = diskStorage({
+  destination: './uploads/products',
+  filename: (req, file, callback) => {
+    const uniqueName = uuidv4();
+    const ext = extname(file.originalname);
+    callback(null, `${uniqueName}${ext}`);
+  },
+});
+
+const fileFilter = (req: any, file: any, callback: any) => {
+  if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+    return callback(new Error('Only image files are allowed!'), false);
+  }
+  callback(null, true);
+};
+
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  // ========== ROUTE SPESIFIK ==========
   @Get('top')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async getTopProducts(@Query('limit') limit?: string) {
@@ -47,7 +69,6 @@ export class ProductsController {
     );
   }
 
-  // ========== PERBAIKAN: ENDPOINT TOP SELLING ==========
   @Get('top-selling')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)
@@ -56,13 +77,10 @@ export class ProductsController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
   ) {
-    console.log('getTopSelling called with:', { startDate, endDate, limit });
-
     const startDateObj = startDate ? new Date(startDate) : undefined;
     const endDateObj = endDate ? new Date(endDate) : undefined;
     const limitNum = limit ? parseInt(limit) : 10;
 
-    // Validasi tanggal
     if (startDateObj && isNaN(startDateObj.getTime())) {
       throw new BadRequestException('Invalid startDate format');
     }
@@ -79,15 +97,33 @@ export class ProductsController {
     return this.productsService.findAllForDropdown();
   }
 
-  // ========== CREATE ==========
+  // ========== CREATE dengan Multiple Images ==========
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  @UseInterceptors(FilesInterceptor('images', 10, { storage, fileFilter }))
+  async create(
+    @Body() createProductDto: CreateProductDto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    const imageUrls = files?.map((file) => `/uploads/products/${file.filename}`) || [];
+    return this.productsService.create(createProductDto, imageUrls);
   }
 
-  // ========== LIST ENDPOINTS ==========
+  // ========== UPDATE dengan Multiple Images ==========
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  @UseInterceptors(FilesInterceptor('images', 10, { storage, fileFilter }))
+  async update(
+    @Param('id') id: string,
+    @Body() updateProductDto: UpdateProductDto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    const imageUrls = files?.map((file) => `/uploads/products/${file.filename}`) || [];
+    return this.productsService.update(id, updateProductDto, imageUrls);
+  }
+
   @Get()
   @Public()
   async findAll(
@@ -111,18 +147,10 @@ export class ProductsController {
     );
   }
 
-  // ========== DETAIL ENDPOINTS ==========
   @Get(':id')
   @Public()
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
-  }
-
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productsService.update(id, updateProductDto);
   }
 
   @Delete(':id')
@@ -130,5 +158,26 @@ export class ProductsController {
   @Roles(UserRole.OWNER)
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
+  }
+
+  @Delete('images/:imageId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  async removeImage(@Param('imageId') imageId: string) {
+    return this.productsService.removeImage(imageId);
+  }
+
+  @Post('images/:imageId/primary')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  async setPrimaryImage(@Param('imageId') imageId: string, @Body('productId') productId: string) {
+    return this.productsService.setPrimaryImage(productId, imageId);
+  }
+
+  @Patch('images/order')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
+  async updateImageOrder(@Body() body: { productId: string; imageOrders: any[] }) {
+    return this.productsService.updateImageOrder(body.productId, body.imageOrders);
   }
 }

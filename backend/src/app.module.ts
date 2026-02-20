@@ -17,6 +17,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { User } from './modules/users/entities/user.entity';
 import { Category } from './modules/categories/entities/category.entity';
 import { Product } from './modules/products/entities/product.entity';
+import { ProductImage } from './modules/products/entities/product-image.entity';
 import { Stock } from './modules/inventory/entities/stock.entity';
 import { Inventory } from './modules/inventory/entities/inventory.entity';
 import { Transaction } from './modules/transactions/entities/transaction.entity';
@@ -48,6 +49,7 @@ import { TransactionCron } from './modules/transactions/cron/transaction.cron';
           User,
           Category,
           Product,
+          ProductImage,
           Stock,
           Inventory,
           Transaction,

@@ -1,27 +1,33 @@
+// backend/src/main.ts
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  try {
-    const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-    // Enable CORS bawaan NestJS
-    app.enableCors({
-      origin: 'http://localhost:3000',
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-      credentials: true,
-    });
+  // Enable CORS
+  app.enableCors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+  });
 
-    await app.listen(3001);
-    console.log(`🚀 Backend running on http://localhost:3001`);
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
+  // Serve static files from uploads directory
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
+
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+    }),
+  );
+
+  await app.listen(3001);
+  console.log(`🚀 Backend running on http://localhost:3001`);
 }
-
-// Handle promise dengan .catch()
-bootstrap().catch((error) => {
-  console.error('❌ Unhandled error:', error);
-  process.exit(1);
-});
+bootstrap();

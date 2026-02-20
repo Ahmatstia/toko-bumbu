@@ -1,22 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { 
-  ShoppingCartIcon, 
-  ArrowLeftIcon, 
+import React, { useState, useEffect } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ShoppingCartIcon,
+  ArrowLeftIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon 
-} from '@heroicons/react/24/outline';
-import api from '../../services/api';
-import { useCartStore } from '../../store/cartStore';
-import toast from 'react-hot-toast';
+  ExclamationTriangleIcon,
+} from "@heroicons/react/24/outline";
+import api from "../../services/api";
+import { useCartStore } from "../../store/cartStore";
+import toast from "react-hot-toast";
+
+const API_BASE = "http://localhost:3001";
+
+// Helper: buat URL gambar lengkap
+const getImageUrl = (url: string | null): string | null => {
+  if (!url) return null;
+  if (url.startsWith("http")) return url;
+  return `${API_BASE}${url}`;
+};
 
 // Types
+interface ProductImage {
+  id: string;
+  imageUrl: string;
+  isPrimary: boolean;
+  sortOrder: number;
+}
+
 interface Product {
   id: string;
   name: string;
   description: string | null;
   imageUrl: string | null;
+  images?: ProductImage[];
   category: {
     id: string;
     name: string;
@@ -44,16 +61,16 @@ const ProductDetail: React.FC = () => {
   const navigate = useNavigate();
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  
-  const addToCart = useCartStore(state => state.addItem);
+
+  const addToCart = useCartStore((state) => state.addItem);
 
   // Fetch product details
-  const { 
-    data: product, 
+  const {
+    data: product,
     isLoading: productLoading,
-    error: productError 
+    error: productError,
   } = useQuery<Product>({
-    queryKey: ['product', id],
+    queryKey: ["product", id],
     queryFn: async () => {
       const response = await api.get(`/products/${id}`);
       return response.data;
@@ -62,18 +79,17 @@ const ProductDetail: React.FC = () => {
   });
 
   // Fetch product stock
-  const { 
-    data: stockData, 
+  const {
+    data: stockData,
     isLoading: stockLoading,
-    refetch: refetchStock
   } = useQuery({
-    queryKey: ['product-stock', id],
+    queryKey: ["product-stock", id],
     queryFn: async () => {
       try {
         const response = await api.get(`/inventory/stock?productId=${id}`);
         return response.data;
       } catch (error) {
-        console.error('Error fetching stock:', error);
+        console.error("Error fetching stock:", error);
         return { stocks: [], totalStock: 0 };
       }
     },
@@ -83,23 +99,49 @@ const ProductDetail: React.FC = () => {
   const stocks: Stock[] = stockData?.stocks || [];
   const totalStock = stocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
   const availableStock = totalStock;
-  
-  // Ambil harga dari stock pertama (asumsi semua batch harga sama)
+
+  // Ambil harga dari stock pertama
   const productPrice = stocks.length > 0 ? Number(stocks[0].sellingPrice) : 0;
-  
+
+  // Kumpulkan semua gambar dari images[] atau fallback ke imageUrl
+  const allImages: string[] = React.useMemo(() => {
+    if (product?.images && product.images.length > 0) {
+      return [...product.images]
+        .sort((a, b) => {
+          if (a.isPrimary) return -1;
+          if (b.isPrimary) return 1;
+          return a.sortOrder - b.sortOrder;
+        })
+        .map((img) => getImageUrl(img.imageUrl)!)
+        .filter(Boolean);
+    }
+    if (product?.imageUrl) {
+      const url = getImageUrl(product.imageUrl);
+      return url ? [url] : [];
+    }
+    return [];
+  }, [product]);
+
+  // Set gambar aktif saat product dimuat
+  useEffect(() => {
+    if (allImages.length > 0 && !selectedImage) {
+      setSelectedImage(allImages[0]);
+    }
+  }, [allImages]);
+
   // Format harga
   const formatPrice = (price: number) => {
-    if (!price || price === 0) return 'Rp 0';
-    return `Rp ${price.toLocaleString('id-ID')}`;
+    if (!price || price === 0) return "Rp 0";
+    return `Rp ${price.toLocaleString("id-ID")}`;
   };
 
   // Format tanggal
   const formatDate = (date: string | null) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+    if (!date) return "-";
+    return new Date(date).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
   };
 
@@ -116,7 +158,7 @@ const ProductDetail: React.FC = () => {
     if (!product) return;
 
     if (availableStock === 0) {
-      toast.error('Stok habis', { icon: '😕' });
+      toast.error("Stok habis", { icon: "😕" });
       return;
     }
 
@@ -125,37 +167,36 @@ const ProductDetail: React.FC = () => {
       name: product.name,
       price: productPrice,
       quantity: quantity,
-      imageUrl: product.imageUrl || undefined,
+      imageUrl: allImages[0] || undefined,
     });
 
     toast.success(
       <div>
         <p className="font-semibold">Berhasil ditambahkan!</p>
-        <p className="text-sm">{quantity} x {product.name}</p>
+        <p className="text-sm">
+          {quantity} x {product.name}
+        </p>
       </div>,
       {
-        icon: '🛒',
+        icon: "🛒",
         duration: 3000,
-      }
+      },
     );
   };
 
   // Handle buy now
   const handleBuyNow = () => {
     handleAddToCart();
-    navigate('/cart');
+    navigate("/cart");
   };
 
   // Debug
   useEffect(() => {
     if (product) {
-      console.log('Product:', product);
+      console.log("Product:", product);
+      console.log("Images:", product.images);
     }
-    if (stocks.length > 0) {
-      console.log('Stocks:', stocks);
-      console.log('Price:', productPrice);
-    }
-  }, [product, stocks, productPrice]);
+  }, [product]);
 
   // Loading state
   if (productLoading || stockLoading) {
@@ -175,7 +216,9 @@ const ProductDetail: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-8 bg-white rounded-2xl shadow-lg">
           <ExclamationTriangleIcon className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Produk Tidak Ditemukan</h2>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            Produk Tidak Ditemukan
+          </h2>
           <p className="text-gray-600 mb-6">
             Maaf, produk yang Anda cari tidak ditemukan atau telah dihapus.
           </p>
@@ -190,6 +233,8 @@ const ProductDetail: React.FC = () => {
       </div>
     );
   }
+
+  const activeImage = selectedImage || allImages[0] || null;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -208,11 +253,15 @@ const ProductDetail: React.FC = () => {
           <div>
             {/* Main Image */}
             <div className="aspect-square bg-gradient-to-br from-primary-50 to-gray-100 rounded-2xl overflow-hidden mb-4 flex items-center justify-center">
-              {product.imageUrl ? (
+              {activeImage ? (
                 <img
-                  src={selectedImage || product.imageUrl}
+                  src={activeImage}
                   alt={product.name}
                   className="w-full h-full object-contain"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                  }}
                 />
               ) : (
                 <div className="text-center">
@@ -222,24 +271,38 @@ const ProductDetail: React.FC = () => {
               )}
             </div>
 
-            {/* Thumbnail Images */}
-            {product.imageUrl && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedImage(product.imageUrl)}
-                  className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
-                    selectedImage === product.imageUrl || (!selectedImage && product.imageUrl)
-                      ? 'border-primary-600'
-                      : 'border-transparent hover:border-primary-300'
-                  }`}
-                >
-                  <img
-                    src={product.imageUrl}
-                    alt={`${product.name} thumbnail`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
+            {/* Thumbnail Images - tampil jika ada lebih dari 0 gambar */}
+            {allImages.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {allImages.map((imgUrl, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImage(imgUrl)}
+                    className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 ${
+                      activeImage === imgUrl
+                        ? "border-primary-600 shadow-md"
+                        : "border-transparent hover:border-primary-300"
+                    }`}
+                  >
+                    <img
+                      src={imgUrl}
+                      alt={`${product.name} ${index + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.parentElement!.style.display = "none";
+                      }}
+                    />
+                  </button>
+                ))}
               </div>
+            )}
+
+            {/* Badge jumlah foto */}
+            {allImages.length > 1 && (
+              <p className="text-xs text-gray-400 mt-2">
+                {allImages.length} foto tersedia
+              </p>
             )}
           </div>
 
@@ -261,9 +324,7 @@ const ProductDetail: React.FC = () => {
             </h1>
 
             {/* SKU */}
-            <p className="text-sm text-gray-500 mb-4">
-              SKU: {product.sku}
-            </p>
+            <p className="text-sm text-gray-500 mb-4">SKU: {product.sku}</p>
 
             {/* Price */}
             <div className="mb-6">
@@ -276,7 +337,9 @@ const ProductDetail: React.FC = () => {
             {/* Stock Status */}
             <div className="mb-6 p-4 bg-gray-50 rounded-xl">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-gray-700">Ketersediaan Stok:</span>
+                <span className="font-semibold text-gray-700">
+                  Ketersediaan Stok:
+                </span>
                 {availableStock > 0 ? (
                   <span className="flex items-center text-green-600">
                     <CheckCircleIcon className="h-5 w-5 mr-1" />
@@ -293,11 +356,18 @@ const ProductDetail: React.FC = () => {
               {/* Batch Info */}
               {stocks.length > 1 && (
                 <div className="mt-3 text-sm">
-                  <p className="font-medium text-gray-600 mb-2">Detail Stok per Batch:</p>
+                  <p className="font-medium text-gray-600 mb-2">
+                    Detail Stok per Batch:
+                  </p>
                   {stocks.map((stock) => (
-                    <div key={stock.id} className="flex justify-between text-gray-500 mb-1">
-                      <span>Batch: {stock.batchCode || 'N/A'}</span>
-                      <span>{stock.quantity} {product.unit}</span>
+                    <div
+                      key={stock.id}
+                      className="flex justify-between text-gray-500 mb-1"
+                    >
+                      <span>Batch: {stock.batchCode || "N/A"}</span>
+                      <span>
+                        {stock.quantity} {product.unit}
+                      </span>
                       {stock.expiryDate && (
                         <span className="text-xs">
                           Exp: {formatDate(stock.expiryDate)}
@@ -327,7 +397,7 @@ const ProductDetail: React.FC = () => {
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-gray-300 rounded-xl overflow-hidden">
                   <button
-                    onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                     disabled={quantity <= 1}
                     className="px-4 py-2 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -342,7 +412,9 @@ const ProductDetail: React.FC = () => {
                     className="w-20 text-center py-2 border-x border-gray-300 focus:outline-none"
                   />
                   <button
-                    onClick={() => setQuantity(q => Math.min(availableStock, q + 1))}
+                    onClick={() =>
+                      setQuantity((q) => Math.min(availableStock, q + 1))
+                    }
                     disabled={quantity >= availableStock}
                     className="px-4 py-2 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -350,7 +422,9 @@ const ProductDetail: React.FC = () => {
                   </button>
                 </div>
                 <span className="text-gray-500">
-                  {availableStock > 0 ? `Tersedia: ${availableStock} ${product.unit}` : 'Stok habis'}
+                  {availableStock > 0
+                    ? `Tersedia: ${availableStock} ${product.unit}`
+                    : "Stok habis"}
                 </span>
               </div>
             </div>
@@ -378,7 +452,7 @@ const ProductDetail: React.FC = () => {
             <div className="mt-8 grid grid-cols-2 gap-4 text-sm">
               <div className="p-4 bg-gray-50 rounded-xl">
                 <p className="font-semibold text-gray-800 mb-1">Kategori</p>
-                <Link 
+                <Link
                   to={`/products?category=${product.category.id}`}
                   className="text-primary-600 hover:underline"
                 >
@@ -390,19 +464,23 @@ const ProductDetail: React.FC = () => {
                 <p className="text-gray-600">{product.unit}</p>
               </div>
               <div className="p-4 bg-gray-50 rounded-xl">
-                <p className="font-semibold text-gray-800 mb-1">Min. Pembelian</p>
+                <p className="font-semibold text-gray-800 mb-1">
+                  Min. Pembelian
+                </p>
                 <p className="text-gray-600">1 {product.unit}</p>
               </div>
               <div className="p-4 bg-gray-50 rounded-xl">
                 <p className="font-semibold text-gray-800 mb-1">Stok Minimum</p>
-                <p className="text-gray-600">{product.minStock} {product.unit}</p>
+                <p className="text-gray-600">
+                  {product.minStock} {product.unit}
+                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Related Products Section */}
+      {/* Informasi Stok */}
       {stocks.length > 0 && (
         <div className="mt-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">
@@ -422,11 +500,17 @@ const ProductDetail: React.FC = () => {
               <tbody>
                 {stocks.map((stock) => (
                   <tr key={stock.id} className="border-b hover:bg-gray-50">
-                    <td className="py-3 px-4">{stock.batchCode || 'N/A'}</td>
+                    <td className="py-3 px-4">{stock.batchCode || "N/A"}</td>
                     <td className="py-3 px-4">{stock.quantity}</td>
-                    <td className="py-3 px-4">{formatPrice(Number(stock.purchasePrice))}</td>
-                    <td className="py-3 px-4">{formatPrice(Number(stock.sellingPrice))}</td>
-                    <td className="py-3 px-4">{formatDate(stock.expiryDate)}</td>
+                    <td className="py-3 px-4">
+                      {formatPrice(Number(stock.purchasePrice))}
+                    </td>
+                    <td className="py-3 px-4">
+                      {formatPrice(Number(stock.sellingPrice))}
+                    </td>
+                    <td className="py-3 px-4">
+                      {formatDate(stock.expiryDate)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -1,3 +1,4 @@
+// backend/src/modules/products/entities/product.entity.ts
 import {
   Entity,
   Column,
@@ -5,9 +6,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Category } from '../../categories/entities/category.entity';
+import { ProductImage } from './product-image.entity';
 
 export enum Unit {
   PCS = 'Pcs',
@@ -50,14 +53,17 @@ export class Product {
   @Column({ nullable: true, unique: true })
   barcode: string;
 
-  @Column({ name: 'image_url', nullable: true })
-  imageUrl: string;
+  @Column({ name: 'image_url', type: 'varchar', nullable: true })
+  imageUrl: string | null;
 
   @Column({ name: 'min_stock', default: 5 })
   minStock: number;
 
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
+
+  @OneToMany(() => ProductImage, (image) => image.product)
+  images: ProductImage[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

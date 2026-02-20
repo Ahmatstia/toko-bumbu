@@ -413,7 +413,11 @@ const Products: React.FC = () => {
                       <div className="relative h-48 bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center overflow-hidden">
                         {product.imageUrl ? (
                           <img
-                            src={product.imageUrl}
+                            src={
+                              product.imageUrl.startsWith("http")
+                                ? product.imageUrl
+                                : `http://localhost:3001${product.imageUrl}`
+                            }
                             alt={product.name}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                             onError={(e) => {
@@ -503,7 +507,11 @@ const Products: React.FC = () => {
                       <div className="relative h-48 bg-gradient-to-br from-primary-50 to-gray-100 flex items-center justify-center overflow-hidden">
                         {product.imageUrl ? (
                           <img
-                            src={product.imageUrl}
+                            src={
+                              product.imageUrl.startsWith("http")
+                                ? product.imageUrl
+                                : `http://localhost:3001${product.imageUrl}`
+                            }
                             alt={product.name}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                             onError={(e) => {

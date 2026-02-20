@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Product } from './entities/product.entity';
+import { ProductImage } from './entities/product-image.entity';
 import { Category } from '../categories/entities/category.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -17,12 +18,13 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private productRepository: Repository<Product>,
+    @InjectRepository(ProductImage)
+    private productImageRepository: Repository<ProductImage>,
     @InjectRepository(Category)
     private categoryRepository: Repository<Category>,
   ) {}
 
   async generateSku(name: string, categoryName: string): Promise<string> {
-    // Format: CAT-NAME-001
     const categoryPrefix = categoryName
       .split(' ')
       .map((word) => word.substring(0, 2).toUpperCase())
@@ -35,7 +37,6 @@ export class ProductsService {
       .join('')
       .substring(0, 4);
 
-    // Cari produk terakhir
     const lastProduct = await this.productRepository.findOne({
       where: { sku: Like(`${categoryPrefix}-${namePrefix}-%`) },
       order: { sku: 'DESC' },
@@ -50,8 +51,7 @@ export class ProductsService {
     return `${categoryPrefix}-${namePrefix}-${nextNumber.toString().padStart(3, '0')}`;
   }
 
-  async create(createProductDto: CreateProductDto) {
-    // Cek category
+  async create(createProductDto: CreateProductDto, imageUrls: string[] = []) {
     const category = await this.categoryRepository.findOne({
       where: { id: createProductDto.categoryId },
     });
@@ -60,13 +60,11 @@ export class ProductsService {
       throw new NotFoundException('Category not found');
     }
 
-    // Generate SKU
     let sku = createProductDto.sku;
     if (!sku) {
       sku = await this.generateSku(createProductDto.name, category.name);
     }
 
-    // Cek SKU duplikat
     const existingProduct = await this.productRepository.findOne({
       where: { sku },
     });
@@ -75,12 +73,34 @@ export class ProductsService {
       throw new ConflictException(`Product with SKU ${sku} already exists`);
     }
 
-    const product = this.productRepository.create({
-      ...createProductDto,
+    const productData: Partial<Product> = {
+      name: createProductDto.name,
+      description: createProductDto.description,
+      categoryId: createProductDto.categoryId,
+      unit: createProductDto.unit,
       sku,
-    });
+      barcode: createProductDto.barcode,
+      minStock: createProductDto.minStock || 5,
+      imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+    };
 
-    return await this.productRepository.save(product);
+    const product = this.productRepository.create(productData);
+    const savedProduct = await this.productRepository.save(product);
+
+    // Simpan semua gambar ke tabel product_images
+    if (imageUrls.length > 0) {
+      const images = imageUrls.map((url, index) =>
+        this.productImageRepository.create({
+          productId: savedProduct.id,
+          imageUrl: url,
+          isPrimary: index === 0,
+          sortOrder: index,
+        }),
+      );
+      await this.productImageRepository.save(images);
+    }
+
+    return this.findOne(savedProduct.id);
   }
 
   async findAll(
@@ -93,7 +113,9 @@ export class ProductsService {
   ) {
     const query = this.productRepository
       .createQueryBuilder('product')
-      .leftJoinAndSelect('product.category', 'category');
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.images', 'images')
+      .orderBy('images.sortOrder', 'ASC');
 
     if (categoryId) {
       query.andWhere('product.categoryId = :categoryId', { categoryId });
@@ -115,7 +137,7 @@ export class ProductsService {
     const [data, total] = await query
       .skip((page - 1) * limit)
       .take(limit)
-      .orderBy('product.name', 'ASC')
+      .addOrderBy('product.name', 'ASC')
       .getManyAndCount();
 
     return {
@@ -129,15 +151,8 @@ export class ProductsService {
     };
   }
 
-  // ========== PERBAIKAN: METHOD GET TOP SELLING ==========
   async getTopSelling(startDate?: Date, endDate?: Date, limit: number = 10) {
     try {
-      console.log('Getting top selling products...');
-      console.log('StartDate:', startDate);
-      console.log('EndDate:', endDate);
-      console.log('Limit:', limit);
-
-      // Gunakan query builder dengan raw SQL join
       const query = this.productRepository
         .createQueryBuilder('product')
         .leftJoin('transaction_items', 'item', 'item.product_id = product.id')
@@ -158,22 +173,16 @@ export class ProductsService {
       }
 
       if (endDate) {
-        // Buat copy date agar tidak mengubah original
         const endDateCopy = new Date(endDate);
         endDateCopy.setHours(23, 59, 59, 999);
-
         query.andWhere('transaction.created_at <= :endDate', {
           endDate: endDateCopy,
         });
       }
 
-      // Hanya transaksi COMPLETED
       query.andWhere('transaction.status = :status', { status: 'COMPLETED' });
 
-      console.log('SQL:', query.getSql());
-
       const results = await query.getRawMany();
-      console.log('Results:', results);
 
       return results.map((item) => ({
         id: item.id,
@@ -188,12 +197,10 @@ export class ProductsService {
     }
   }
 
-  // METHOD KHUSUS UNTUK PUBLIC
   async findAllPublic(categoryId?: string, search?: string, page: number = 1, limit: number = 12) {
     return this.findAll(categoryId, search, page, limit, undefined, true);
   }
 
-  // METHOD UNTUK DROPDOWN
   async findAllForDropdown() {
     const products = await this.productRepository.find({
       relations: ['category'],
@@ -207,7 +214,7 @@ export class ProductsService {
   async findOne(id: string) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['category'],
+      relations: ['category', 'images'],
     });
 
     if (!product) {
@@ -236,7 +243,7 @@ export class ProductsService {
     return products;
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto) {
+  async update(id: string, updateProductDto: UpdateProductDto, newImageUrls: string[] = []) {
     const product = await this.findOne(id);
 
     if (updateProductDto.categoryId && updateProductDto.categoryId !== product.categoryId) {
@@ -255,12 +262,110 @@ export class ProductsService {
       product.categoryId = updateProductDto.categoryId;
     }
 
-    return await this.productRepository.save(product);
+    if (newImageUrls.length > 0) {
+      product.imageUrl = newImageUrls[0];
+    }
+
+    const savedProduct = await this.productRepository.save(product);
+
+    // Simpan gambar baru ke tabel product_images jika ada
+    if (newImageUrls.length > 0) {
+      // Hitung sortOrder berikutnya
+      const existingCount = await this.productImageRepository.count({
+        where: { productId: savedProduct.id },
+      });
+
+      const images = newImageUrls.map((url, index) =>
+        this.productImageRepository.create({
+          productId: savedProduct.id,
+          imageUrl: url,
+          isPrimary: existingCount === 0 && index === 0,
+          sortOrder: existingCount + index,
+        }),
+      );
+      await this.productImageRepository.save(images);
+    }
+
+    return this.findOne(savedProduct.id);
   }
 
   async remove(id: string) {
     const product = await this.findOne(id);
     await this.productRepository.remove(product);
     return { message: 'Product deleted successfully' };
+  }
+
+  // ========== IMAGE MANAGEMENT METHODS ==========
+
+  async removeImage(imageId: string) {
+    const image = await this.productImageRepository.findOne({
+      where: { id: imageId },
+    });
+
+    if (!image) {
+      throw new NotFoundException(`Image with ID ${imageId} not found`);
+    }
+
+    const productId = image.productId;
+    const wasPrimary = image.isPrimary;
+
+    await this.productImageRepository.remove(image);
+
+    // Jika gambar yang dihapus adalah primary, set gambar pertama sebagai primary
+    if (wasPrimary) {
+      const firstImage = await this.productImageRepository.findOne({
+        where: { productId },
+        order: { sortOrder: 'ASC' },
+      });
+
+      if (firstImage) {
+        firstImage.isPrimary = true;
+        await this.productImageRepository.save(firstImage);
+
+        // Update imageUrl di product
+        await this.productRepository.update(productId, { imageUrl: firstImage.imageUrl });
+      } else {
+        // Tidak ada gambar lagi, set imageUrl null
+        await this.productRepository.update(productId, { imageUrl: null });
+      }
+    }
+
+    return { message: 'Image deleted successfully' };
+  }
+
+  async setPrimaryImage(productId: string, imageId: string) {
+    // Reset semua gambar product menjadi bukan primary
+    await this.productImageRepository.update({ productId }, { isPrimary: false });
+
+    // Set gambar yang dipilih sebagai primary
+    const image = await this.productImageRepository.findOne({
+      where: { id: imageId, productId },
+    });
+
+    if (!image) {
+      throw new NotFoundException(`Image with ID ${imageId} not found for this product`);
+    }
+
+    image.isPrimary = true;
+    await this.productImageRepository.save(image);
+
+    // Update imageUrl di tabel products agar tetap sinkron
+    await this.productRepository.update(productId, { imageUrl: image.imageUrl });
+
+    return { message: 'Primary image updated successfully', image };
+  }
+
+  async updateImageOrder(productId: string, imageOrders: { id: string; sortOrder: number }[]) {
+    if (!imageOrders || imageOrders.length === 0) {
+      throw new BadRequestException('imageOrders cannot be empty');
+    }
+
+    const updatePromises = imageOrders.map(({ id, sortOrder }) =>
+      this.productImageRepository.update({ id, productId }, { sortOrder }),
+    );
+
+    await Promise.all(updatePromises);
+
+    return { message: 'Image order updated successfully' };
   }
 }

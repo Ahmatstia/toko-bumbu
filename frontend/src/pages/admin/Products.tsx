@@ -7,9 +7,18 @@ import {
   TrashIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
+  PhotoIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import MultiImageUpload from "../../components/features/products/MultiImageUpload";
+
+interface ProductImage {
+  id: string;
+  imageUrl: string;
+  isPrimary: boolean;
+  sortOrder: number;
+}
 
 interface Product {
   id: string;
@@ -25,6 +34,7 @@ interface Product {
   stockQuantity: number;
   minStock: number;
   isActive: boolean;
+  images?: ProductImage[];
 }
 
 interface Category {
@@ -41,6 +51,14 @@ interface ProductFormData {
   minStock: number;
   price: number;
   initialStock?: number;
+}
+
+interface ImageFile {
+  id: string;
+  file?: File;
+  url: string;
+  isPrimary: boolean;
+  sortOrder: number;
 }
 
 // Format price dengan safe check
@@ -72,6 +90,10 @@ const Products: React.FC = () => {
   const [totalProducts, setTotalProducts] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // ========== STATE UNTUK MULTIPLE IMAGES ==========
+  const [uploadedImages, setUploadedImages] = useState<ImageFile[]>([]);
+
   const [formData, setFormData] = useState<ProductFormData>({
     name: "",
     description: "",
@@ -86,7 +108,7 @@ const Products: React.FC = () => {
   const observer = useRef<IntersectionObserver | null>(null);
   const queryClient = useQueryClient();
 
-  // ========== PERBAIKAN: FETCH CATEGORIES DENGAN SAFE CHECK ==========
+  // Fetch categories dengan safe check
   const { data: categories, isLoading: categoriesLoading } = useQuery<
     Category[]
   >({
@@ -95,17 +117,14 @@ const Products: React.FC = () => {
       const response = await api.get("/categories");
       const data = response.data;
 
-      // Jika data adalah array, return langsung
       if (Array.isArray(data)) {
         return data;
       }
 
-      // Jika data adalah object dengan properti data (pagination)
       if (data && Array.isArray(data.data)) {
         return data.data;
       }
 
-      // Fallback: return array kosong
       console.warn("Categories response is not an array:", data);
       return [];
     },
@@ -120,7 +139,6 @@ const Products: React.FC = () => {
       if (selectedCategory) params.append("categoryId", selectedCategory);
       if (searchTerm) params.append("search", searchTerm);
 
-      // FILTER isActive
       if (!showInactive) {
         params.append("isActive", "true");
       }
@@ -141,7 +159,6 @@ const Products: React.FC = () => {
               0,
             );
 
-            // Ambil harga dari stock jika ada
             let price = product.price;
             if (stocks.length > 0 && stocks[0].sellingPrice) {
               price = stocks[0].sellingPrice;
@@ -185,7 +202,7 @@ const Products: React.FC = () => {
     setIsLoadingMore(false);
   }, [selectedCategory, searchTerm, showInactive]);
 
-  // Load more products (infinite scroll)
+  // Load more products
   const loadMoreProducts = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
 
@@ -209,7 +226,7 @@ const Products: React.FC = () => {
     showInactive,
   ]);
 
-  // Effect untuk memuat ulang saat filter berubah (dengan debounce)
+  // Effect untuk memuat ulang saat filter berubah
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadInitialProducts();
@@ -235,33 +252,18 @@ const Products: React.FC = () => {
     [isLoadingMore, hasMore, loadMoreProducts],
   );
 
+  // Handler untuk multiple images
+  const handleImagesChange = (images: ImageFile[]) => {
+    setUploadedImages(images);
+  };
+
   // Create product mutation
   const createMutation = useMutation({
-    mutationFn: async (data: ProductFormData) => {
-      const productResponse = await api.post("/products", {
-        name: data.name,
-        description: data.description,
-        categoryId: data.categoryId,
-        unit: data.unit,
-        sku: data.sku,
-        minStock: data.minStock,
+    mutationFn: async (formData: FormData) => {
+      const response = await api.post("/products", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-
-      const newProduct = productResponse.data;
-
-      if (data.initialStock && data.initialStock > 0) {
-        await api.post("/inventory/stock/in", {
-          productId: newProduct.id,
-          quantity: data.initialStock,
-          type: "IN",
-          batchCode: `BATCH-INITIAL-${Date.now()}`,
-          sellingPrice: data.price,
-          purchasePrice: data.price * 0.7,
-          notes: "Stok awal saat pembuatan produk",
-        });
-      }
-
-      return newProduct;
+      return response.data;
     },
     onSuccess: () => {
       loadInitialProducts();
@@ -277,20 +279,14 @@ const Products: React.FC = () => {
   const updateMutation = useMutation({
     mutationFn: async ({
       id,
-      data,
+      formData,
     }: {
       id: string;
-      data: Partial<ProductFormData>;
+      formData: FormData;
     }) => {
-      const response = await api.patch(`/products/${id}`, {
-        name: data.name,
-        description: data.description,
-        categoryId: data.categoryId,
-        unit: data.unit,
-        sku: data.sku,
-        minStock: data.minStock,
+      const response = await api.patch(`/products/${id}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-
       return response.data;
     },
     onSuccess: () => {
@@ -348,6 +344,7 @@ const Products: React.FC = () => {
       price: 0,
       initialStock: 0,
     });
+    setUploadedImages([]);
     setIsModalOpen(true);
   };
 
@@ -364,6 +361,20 @@ const Products: React.FC = () => {
       price: product.price,
       initialStock: 0,
     });
+
+    // Konversi existing images ke format ImageFile
+    if (product.images && product.images.length > 0) {
+      const existingImages = product.images.map((img) => ({
+        id: img.id,
+        url: img.imageUrl,
+        isPrimary: img.isPrimary,
+        sortOrder: img.sortOrder,
+      }));
+      setUploadedImages(existingImages);
+    } else {
+      setUploadedImages([]);
+    }
+
     setIsModalOpen(true);
   };
 
@@ -387,10 +398,11 @@ const Products: React.FC = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingProduct(null);
+    setUploadedImages([]);
   };
 
   // Handle form submit
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name.trim()) {
@@ -413,10 +425,43 @@ const Products: React.FC = () => {
       return;
     }
 
+    const formDataObj = new FormData();
+    formDataObj.append("name", formData.name);
+    formDataObj.append("description", formData.description || "");
+    formDataObj.append("categoryId", formData.categoryId);
+    formDataObj.append("unit", formData.unit);
+    formDataObj.append("sku", formData.sku || "");
+    formDataObj.append("minStock", formData.minStock.toString());
+    formDataObj.append("price", formData.price.toString());
+
+    if (!editingProduct) {
+      formDataObj.append(
+        "initialStock",
+        formData.initialStock?.toString() || "0",
+      );
+    }
+
+    // Upload multiple images
+    uploadedImages.forEach((image) => {
+      if (image.file) {
+        formDataObj.append("images", image.file);
+      }
+    });
+
+    // Jika edit dan ada gambar existing, kirim data order
+    if (editingProduct && uploadedImages.length > 0) {
+      const imageOrders = uploadedImages.map((img) => ({
+        id: img.id.startsWith("new-") ? null : img.id,
+        sortOrder: img.sortOrder,
+        isPrimary: img.isPrimary,
+      }));
+      formDataObj.append("imageOrders", JSON.stringify(imageOrders));
+    }
+
     if (editingProduct) {
-      updateMutation.mutate({ id: editingProduct.id, data: formData });
+      updateMutation.mutate({ id: editingProduct.id, formData: formDataObj });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(formDataObj);
     }
   };
 
@@ -434,6 +479,15 @@ const Products: React.FC = () => {
           ? parseFloat(value) || 0
           : value,
     });
+  };
+
+  // Dapatkan URL gambar utama
+  const getPrimaryImageUrl = (product: Product) => {
+    if (!product.images || product.images.length === 0) {
+      return null;
+    }
+    const primary = product.images.find((img) => img.isPrimary);
+    return primary ? primary.imageUrl : product.images[0].imageUrl;
   };
 
   if (allProducts.length === 0 && isLoadingMore) {
@@ -483,7 +537,6 @@ const Products: React.FC = () => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           >
             <option value="">Semua Kategori</option>
-            {/* ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ========== */}
             {Array.isArray(categories) &&
               categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
@@ -529,6 +582,9 @@ const Products: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
+                  Gambar
+                </th>
+                <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
                   SKU
                 </th>
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
@@ -560,13 +616,14 @@ const Products: React.FC = () => {
             <tbody>
               {allProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-8 text-gray-500">
+                  <td colSpan={10} className="text-center py-8 text-gray-500">
                     Tidak ada produk
                   </td>
                 </tr>
               ) : (
                 allProducts.map((product, index) => {
                   const isLastItem = index === allProducts.length - 1;
+                  const primaryImage = getPrimaryImageUrl(product);
 
                   return (
                     <tr
@@ -574,6 +631,30 @@ const Products: React.FC = () => {
                       ref={isLastItem ? lastProductRef : null}
                       className="border-b border-gray-100 hover:bg-gray-50"
                     >
+                      <td className="py-4 px-6">
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden">
+                          {primaryImage ? (
+                            <img
+                              src={
+                                primaryImage.startsWith("http")
+                                  ? primaryImage
+                                  : `http://localhost:3001${primaryImage}`
+                              }
+                              alt={product.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              <PhotoIcon className="h-6 w-6" />
+                            </div>
+                          )}
+                          {product.images && product.images.length > 1 && (
+                            <span className="absolute -top-1 -right-1 bg-primary-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                              {product.images.length}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-4 px-6 font-mono text-sm">
                         {product.sku}
                       </td>
@@ -657,156 +738,166 @@ const Products: React.FC = () => {
 
       {/* Modal Form */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-4xl w-full my-8">
             <div className="p-6">
               <h2 className="text-2xl font-bold mb-6">
                 {editingProduct ? "Edit Produk" : "Tambah Produk Baru"}
               </h2>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Nama Produk */}
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* ========== MULTIPLE IMAGE UPLOAD ========== */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nama Produk <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
+                  <MultiImageUpload
+                    existingImages={editingProduct?.images || []}
+                    onImagesChange={handleImagesChange}
+                    maxImages={10}
                   />
                 </div>
 
-                {/* Kategori */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Kategori <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="categoryId"
-                    value={formData.categoryId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Pilih Kategori</option>
-                    {/* ========== PERBAIKAN: PASTIKAN categories ADALAH ARRAY ========== */}
-                    {Array.isArray(categories) &&
-                      categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Harga */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Harga Jual <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="price"
-                    value={formData.price}
-                    onChange={handleChange}
-                    min="0"
-                    step="100"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-
-                {/* Stok Awal - hanya untuk produk baru */}
-                {!editingProduct && (
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Nama Produk */}
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Stok Awal <span className="text-red-500">*</span>
+                      Nama Produk <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="number"
-                      name="initialStock"
-                      value={formData.initialStock}
+                      type="text"
+                      name="name"
+                      value={formData.name}
                       onChange={handleChange}
-                      min="0"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       required
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Jumlah stok awal untuk produk baru
-                    </p>
                   </div>
-                )}
 
-                {/* Unit */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Satuan <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="unit"
-                    value={formData.unit}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="Pcs">Pcs</option>
-                    <option value="Kg">Kg</option>
-                    <option value="Pack">Pack</option>
-                    <option value="Dus">Dus</option>
-                    <option value="Botol">Botol</option>
-                    <option value="Liter">Liter</option>
-                  </select>
-                </div>
+                  {/* Kategori */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Kategori <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="categoryId"
+                      value={formData.categoryId}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Pilih Kategori</option>
+                      {Array.isArray(categories) &&
+                        categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
 
-                {/* SKU */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    SKU (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    name="sku"
-                    value={formData.sku}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Auto-generate jika kosong"
-                  />
-                </div>
+                  {/* Harga */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Harga Jual <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="price"
+                      value={formData.price}
+                      onChange={handleChange}
+                      min="0"
+                      step="100"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
 
-                {/* Min Stok */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Minimum Stok
-                  </label>
-                  <input
-                    type="number"
-                    name="minStock"
-                    value={formData.minStock}
-                    onChange={handleChange}
-                    min="1"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
+                  {/* Stok Awal - hanya untuk produk baru */}
+                  {!editingProduct && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Stok Awal <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        name="initialStock"
+                        value={formData.initialStock}
+                        onChange={handleChange}
+                        min="0"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Jumlah stok awal untuk produk baru
+                      </p>
+                    </div>
+                  )}
 
-                {/* Deskripsi */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Deskripsi (Opsional)
-                  </label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  {/* Unit */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Satuan <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="unit"
+                      value={formData.unit}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    >
+                      <option value="Pcs">Pcs</option>
+                      <option value="Kg">Kg</option>
+                      <option value="Pack">Pack</option>
+                      <option value="Dus">Dus</option>
+                      <option value="Botol">Botol</option>
+                      <option value="Liter">Liter</option>
+                    </select>
+                  </div>
+
+                  {/* SKU */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      SKU (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      name="sku"
+                      value={formData.sku}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="Auto-generate jika kosong"
+                    />
+                  </div>
+
+                  {/* Min Stok */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Minimum Stok
+                    </label>
+                    <input
+                      type="number"
+                      name="minStock"
+                      value={formData.minStock}
+                      onChange={handleChange}
+                      min="1"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Deskripsi - Full width */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Deskripsi (Opsional)
+                    </label>
+                    <textarea
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      rows={4}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    />
+                  </div>
                 </div>
 
                 {/* Buttons */}
-                <div className="flex gap-3 pt-4">
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <button
                     type="submit"
                     disabled={
@@ -817,8 +908,8 @@ const Products: React.FC = () => {
                     {createMutation.isPending || updateMutation.isPending
                       ? "Menyimpan..."
                       : editingProduct
-                        ? "Update"
-                        : "Simpan"}
+                        ? "Update Produk"
+                        : "Simpan Produk"}
                   </button>
                   <button
                     type="button"
