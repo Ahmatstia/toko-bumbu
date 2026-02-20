@@ -41,4 +41,20 @@ export class CreateProductDto {
   @Min(0)
   @Type(() => Number)
   minStock: number = 5;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  price: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @Type(() => Number)
+  initialStock?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  isActive?: boolean = true;
 }

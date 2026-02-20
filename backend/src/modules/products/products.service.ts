@@ -10,6 +10,7 @@ import { Repository, Like } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { Category } from '../categories/entities/category.entity';
+import { Stock } from '../inventory/entities/stock.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
@@ -22,6 +23,8 @@ export class ProductsService {
     private productImageRepository: Repository<ProductImage>,
     @InjectRepository(Category)
     private categoryRepository: Repository<Category>,
+    @InjectRepository(Stock)
+    private stockRepository: Repository<Stock>,
   ) {}
 
   async generateSku(name: string, categoryName: string): Promise<string> {
@@ -82,6 +85,7 @@ export class ProductsService {
       barcode: createProductDto.barcode,
       minStock: createProductDto.minStock || 5,
       imageUrl: imageUrls.length > 0 ? imageUrls[0] : null,
+      isActive: createProductDto.isActive !== undefined ? createProductDto.isActive : true,
     };
 
     const product = this.productRepository.create(productData);
@@ -98,6 +102,19 @@ export class ProductsService {
         }),
       );
       await this.productImageRepository.save(images);
+    }
+
+    // Buat stok awal jika ada harga/stok
+    if (createProductDto.price !== undefined || createProductDto.initialStock !== undefined) {
+      const stock = this.stockRepository.create({
+        productId: savedProduct.id,
+        quantity: createProductDto.initialStock || 0,
+        sellingPrice: createProductDto.price || 0,
+        purchasePrice: (createProductDto.price || 0) * 0.7, // Asumsi default
+        batchCode: `INITIAL-${Date.now()}`,
+        isActive: true,
+      });
+      await this.stockRepository.save(stock);
     }
 
     return this.findOne(savedProduct.id);
@@ -140,8 +157,45 @@ export class ProductsService {
       .addOrderBy('product.name', 'ASC')
       .getManyAndCount();
 
+    // Optimasi N+1: Ambil semua stok untuk produk yang ada dalam list
+    const productIds = data.map((p) => p.id);
+    let stockMap = {};
+
+    if (productIds.length > 0) {
+      const stocks = await this.stockRepository
+        .createQueryBuilder('stock')
+        .select('stock.productId', 'productId')
+        .addSelect('SUM(stock.quantity)', 'totalStock')
+        .addSelect('MAX(stock.sellingPrice)', 'price')
+        .where('stock.productId IN (:...productIds)', { productIds })
+        .groupBy('stock.productId')
+        .getRawMany<{ productId: string; totalStock: string; price: string }>();
+
+      stockMap = stocks.reduce(
+        (acc, curr) => {
+          acc[curr.productId] = {
+            quantity: parseInt(curr.totalStock),
+            price: parseFloat(curr.price) || 0,
+          };
+          return acc;
+        },
+        {} as Record<string, { quantity: number; price: number }>,
+      );
+    }
+
+    const enhancedData = data.map((product) => {
+      const stockInfo = (stockMap as Record<string, { quantity: number; price: number }>)[
+        product.id
+      ] || { quantity: 0, price: 0 };
+      return {
+        ...product,
+        stockQuantity: stockInfo.quantity,
+        price: stockInfo.price,
+      };
+    });
+
     return {
-      data,
+      data: enhancedData,
       meta: {
         total,
         page,
@@ -182,7 +236,13 @@ export class ProductsService {
 
       query.andWhere('transaction.status = :status', { status: 'COMPLETED' });
 
-      const results = await query.getRawMany();
+      const results = await query.getRawMany<{
+        id: string;
+        name: string;
+        image: string;
+        sold: string;
+        revenue: string;
+      }>();
 
       return results.map((item) => ({
         id: item.id,
@@ -221,7 +281,48 @@ export class ProductsService {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    return product;
+    // Ambil harga dari stock
+    const latestStock = await this.stockRepository.findOne({
+      where: { productId: id },
+      order: { createdAt: 'DESC' },
+    });
+
+    return {
+      ...product,
+      price: latestStock?.sellingPrice || 0,
+      stockQuantity: undefined, // Will be handled if needed elsewhere
+    };
+  }
+
+  async getRecommendedProducts(limit: number = 4) {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoin('transaction_items', 'item', 'item.product_id = product.id')
+      .leftJoin('transactions', 'transaction', 'transaction.id = item.transaction_id')
+      .select('product.id', 'id')
+      .addSelect('product.name', 'name')
+      .addSelect('product.image_url', 'image')
+      .addSelect('COALESCE(SUM(item.quantity), 0)', 'sold')
+      .addSelect('COALESCE(SUM(item.subtotal), 0)', 'revenue')
+      .where('transaction.status = :status', { status: 'COMPLETED' })
+      .groupBy('product.id')
+      .orderBy('sold', 'DESC')
+      .limit(limit)
+      .getRawMany<{
+        id: string;
+        name: string;
+        image: string;
+        sold: string;
+        revenue: string;
+      }>();
+
+    return products.map((item) => ({
+      id: item.id,
+      name: item.name,
+      image: item.image,
+      sold: parseInt(item.sold) || 0,
+      revenue: parseFloat(item.revenue) || 0,
+    }));
   }
 
   async getTopProducts(limit: number = 5) {
@@ -267,6 +368,14 @@ export class ProductsService {
     }
 
     const savedProduct = await this.productRepository.save(product);
+
+    // Sync price ke stock jika diupdate
+    if (updateProductDto.price !== undefined) {
+      await this.stockRepository.update(
+        { productId: id },
+        { sellingPrice: updateProductDto.price },
+      );
+    }
 
     // Simpan gambar baru ke tabel product_images jika ada
     if (newImageUrls.length > 0) {
