@@ -18,11 +18,13 @@ export interface CartItem {
 export interface Product {
   id: string;
   name: string;
+  sku: string;
+  barcode?: string;
   price: number;
-  stock: number;
+  stockQuantity: number;
   imageUrl?: string;
   categoryId: string;
-  categoryName: string;
+  category: { id: string; name: string };
   unit: string;
 }
 
@@ -40,6 +42,9 @@ export const usePos = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
+  
+  // Tab/Mode state
+  const [activeTab, setActiveTab] = useState<"CASHIER" | "WEB_ORDERS">("CASHIER");
 
   // ========== STATE BARU UNTUK ORDER TYPE ==========
   const [orderType, setOrderType] = useState<"ONLINE" | "OFFLINE">("OFFLINE");
@@ -77,82 +82,42 @@ export const usePos = () => {
     },
   });
 
-  // INFINITE QUERY untuk produk
+  // ========== OPTIMIZED FETCH: ALL PRODUCTS FOR POS ==========
   const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    data: products = [],
     isLoading,
     refetch,
-  } = useInfiniteQuery({
-    queryKey: ["pos-products", selectedCategory, debouncedSearch],
-    queryFn: async ({ pageParam = 1 }) => {
-      const params = new URLSearchParams();
-      if (selectedCategory) params.append("categoryId", selectedCategory);
-      if (debouncedSearch) params.append("search", debouncedSearch);
-      params.append("page", pageParam.toString());
-      params.append("limit", "20");
-
-      console.log(`Fetching page ${pageParam}...`);
-
-      const response = await api.get(`/products/public?${params.toString()}`);
-      const productsData = response.data.data || [];
-      const meta = response.data.meta;
-
-      // Fetch stock untuk setiap produk di halaman ini
-      const productsWithStock = await Promise.all(
-        productsData.map(async (product: any) => {
-          try {
-            const stockRes = await api.get(
-              `/inventory/stock?productId=${product.id}`,
-            );
-            const stocks = stockRes.data.stocks || [];
-            const totalStock = stocks.reduce(
-              (sum: number, s: any) => sum + (s.quantity || 0),
-              0,
-            );
-            const price = stocks[0]?.sellingPrice || 0;
-
-            return {
-              ...product,
-              price: Number(price),
-              stock: totalStock,
-              categoryName: product.category?.name || "",
-              categoryId: product.category?.id || "",
-            };
-          } catch (error) {
-            console.error(`Error fetching stock for ${product.name}:`, error);
-            return {
-              ...product,
-              price: 0,
-              stock: 0,
-              categoryName: product.category?.name || "",
-              categoryId: product.category?.id || "",
-            };
-          }
-        }),
-      );
-
-      // Hanya tampilkan produk dengan stok > 0 (untuk kasir)
-      const inStock = productsWithStock.filter((p: any) => p.stock > 0);
-
-      return {
-        products: inStock,
-        meta,
-      };
+  } = useQuery<Product[]>({
+    queryKey: ["pos-products-all"],
+    queryFn: async () => {
+      const response = await api.get("/products/pos/all");
+      return response.data;
     },
-    getNextPageParam: (lastPage) => {
-      if (lastPage.meta?.page < lastPage.meta?.totalPages) {
-        return lastPage.meta.page + 1;
-      }
-      return undefined;
-    },
-    initialPageParam: 1,
   });
 
-  // Gabungkan semua produk dari semua halaman
-  const allProducts = data?.pages.flatMap((page) => page.products) || [];
+  // ========== FETCH PENDING WEB ORDERS ==========
+  const { data: webOrders = [], refetch: refetchWebOrders } = useQuery<any[]>({
+    queryKey: ["pos-web-orders"],
+    queryFn: async () => {
+      const response = await api.get("/transactions?status=PENDING&orderType=ONLINE");
+      // Handle response structure (check if it's .data or .data.data)
+      return response.data.data || response.data || [];
+    },
+    enabled: activeTab === "WEB_ORDERS",
+    refetchInterval: 30000, // Auto refresh every 30s
+  });
+
+  // ========== FILTERING LOGIC (LOCAL) ==========
+  const filteredProducts = products.filter((p) => {
+    const matchesCategory = !selectedCategory || p.categoryId === selectedCategory;
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch =
+      !searchTerm ||
+      p.name.toLowerCase().includes(searchLower) ||
+      p.sku.toLowerCase().includes(searchLower) ||
+      p.barcode?.includes(searchTerm);
+    return matchesCategory && matchesSearch;
+  });
 
   // Calculate totals
   const subtotal = cart.reduce(
@@ -169,7 +134,7 @@ export const usePos = () => {
       const existing = prev.find((item) => item.productId === product.id);
 
       if (existing) {
-        if (existing.quantity >= product.stock) {
+        if (existing.quantity >= product.stockQuantity) {
           toast.error("Stok tidak cukup");
           return prev;
         }
@@ -187,7 +152,7 @@ export const usePos = () => {
           name: product.name,
           price: product.price,
           quantity: 1,
-          maxStock: product.stock,
+          maxStock: product.stockQuantity,
           imageUrl: product.imageUrl,
         },
       ];
@@ -317,19 +282,38 @@ export const usePos = () => {
     window.print();
   };
 
+  // Confirm web order
+  const confirmWebOrderMutation = useMutation({
+    mutationFn: async (transactionId: string) => {
+      const response = await api.post(`/transactions/${transactionId}/confirm`);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      setLastTransaction(data);
+      setShowReceiptModal(true);
+      toast.success("Pesanan web berhasil diselesaikan!");
+      refetchWebOrders();
+      refetch(); // Refresh stock
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || "Gagal mengkonfirmasi pesanan");
+    },
+  });
+
   return {
     // Data
-    categories, // <-- SUDAH AMAN KARENA SUDAH DI-FIX DI ATAS
-    products: allProducts,
+    categories,
+    products: filteredProducts,
     cart,
     selectedCategory,
     searchTerm,
     isLoading,
-
-    // Infinite scroll
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    
+    // Web Orders
+    webOrders,
+    refetchWebOrders,
+    activeTab,
+    setActiveTab,
 
     // Totals
     subtotal,
@@ -343,14 +327,6 @@ export const usePos = () => {
     lastTransaction,
     isProcessing: createTransactionMutation.isPending,
 
-    // ========== STATE & ACTIONS BARU ==========
-    orderType,
-    customerName,
-    customerPhone,
-    setOrderType,
-    setCustomerName,
-    setCustomerPhone,
-
     // Actions
     setSelectedCategory,
     setSearchTerm,
@@ -358,9 +334,20 @@ export const usePos = () => {
     updateQuantity,
     removeFromCart,
     clearCart,
+    setCart, // Added
     setShowPaymentModal,
     setShowReceiptModal,
     handlePayment,
     handlePrintReceipt,
+    confirmWebOrder: confirmWebOrderMutation.mutate,
+    isConfirmingWebOrder: confirmWebOrderMutation.isPending,
+    
+    // Form management
+    orderType,
+    customerName,
+    customerPhone,
+    setOrderType,
+    setCustomerName,
+    setCustomerPhone,
   };
 };

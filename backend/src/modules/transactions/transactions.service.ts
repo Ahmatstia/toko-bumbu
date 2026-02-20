@@ -328,6 +328,22 @@ export class TransactionsService {
       orderType = 'OFFLINE', // Default OFFLINE untuk kasir
     } = createTransactionDto;
 
+    // ========== ANTI-SPAM CHECK (ONLINE ORDERS) ==========
+    if (orderType === 'ONLINE' && customerPhone) {
+      const pendingCount = await this.transactionRepository.count({
+        where: {
+          customerPhone,
+          status: TransactionStatus.PENDING,
+        },
+      });
+
+      if (pendingCount >= 3) {
+        throw new BadRequestException(
+          'Anda memiliki 3 pesanan tertunda. Silakan selesaikan pesanan sebelumnya terlebih dahulu.',
+        );
+      }
+    }
+
     if (!items || items.length === 0) {
       throw new BadRequestException('Items tidak boleh kosong');
     }
@@ -350,9 +366,20 @@ export class TransactionsService {
     const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
     const invoiceNumber = await this.generateInvoiceNumber();
 
-    // Set expiry 24 jam dari sekarang untuk non-CASH
+    // ========== LOGIKA EXPIRY (E-commerce Standard) ==========
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    if (orderType === 'ONLINE') {
+      if (paymentMethod === PaymentMethod.CASH) {
+        // Cash ONLINE (Bayar di Toko): Kasih 4 jam untuk datang
+        expiresAt.setHours(expiresAt.getHours() + 4);
+      } else {
+        // Transfer/QRIS: Kasih 24 jam (sesuai standar lama)
+        expiresAt.setHours(expiresAt.getHours() + 24);
+      }
+    } else {
+      // OFFLINE: Tidak ada expiry karena langsung selesai
+      expiresAt.setHours(expiresAt.getHours() + 24); // Placeholder, but won't be used
+    }
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -386,7 +413,8 @@ export class TransactionsService {
       }
 
       transaction.notes = notes || null;
-      transaction.expiresAt = paymentMethod === PaymentMethod.CASH ? null : expiresAt;
+      // CASH OFFLINE (Kasir) -> tidak ada expiry. Lainnya -> ada expiry.
+      transaction.expiresAt = (orderType === 'OFFLINE') ? null : expiresAt;
 
       console.log('Saving transaction...');
       const savedTransaction = await queryRunner.manager.save(transaction);

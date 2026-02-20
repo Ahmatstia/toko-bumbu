@@ -54,6 +54,49 @@ export class ProductsService {
     return `${categoryPrefix}-${namePrefix}-${nextNumber.toString().padStart(3, '0')}`;
   }
 
+  async findAllForPos() {
+    const products = await this.productRepository.find({
+      where: { isActive: true },
+      relations: ['category', 'images'],
+      order: { name: 'ASC' },
+    });
+
+    if (products.length === 0) return [];
+
+    const productIds = products.map((p) => p.id);
+
+    // Ambil total stok dan harga jual terbaru/tertinggi
+    const stocks = await this.stockRepository
+      .createQueryBuilder('stock')
+      .select('stock.productId', 'productId')
+      .addSelect('SUM(stock.quantity)', 'totalStock')
+      .addSelect('MAX(stock.sellingPrice)', 'price')
+      .where('stock.productId IN (:...productIds)', { productIds })
+      .andWhere('stock.isActive = :isActive', { isActive: true })
+      .groupBy('stock.productId')
+      .getRawMany<{ productId: string; totalStock: string; price: string }>();
+
+    const stockMap = stocks.reduce(
+      (acc, curr) => {
+        acc[curr.productId] = {
+          quantity: parseInt(curr.totalStock) || 0,
+          price: parseFloat(curr.price) || 0,
+        };
+        return acc;
+      },
+      {} as Record<string, { quantity: number; price: number }>,
+    );
+
+    return products.map((product) => {
+      const stockInfo = stockMap[product.id] || { quantity: 0, price: 0 };
+      return {
+        ...product,
+        stockQuantity: stockInfo.quantity,
+        price: stockInfo.price,
+      };
+    });
+  }
+
   async create(createProductDto: CreateProductDto, imageUrls: string[] = []) {
     const category = await this.categoryRepository.findOne({
       where: { id: createProductDto.categoryId },

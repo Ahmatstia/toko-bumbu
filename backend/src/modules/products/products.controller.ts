@@ -47,6 +47,13 @@ const fileFilter = (req: any, file: any, callback: any) => {
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
+  @Get('pos/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
+  async findAllForPos() {
+    return this.productsService.findAllForPos();
+  }
+
   @Get('top')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async getTopProducts(@Query('limit') limit?: string) {

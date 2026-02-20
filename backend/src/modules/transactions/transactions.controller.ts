@@ -100,6 +100,7 @@ export class TransactionsController {
   @Public()
   async createGuest(@Body() createTransactionDto: CreateTransactionDto) {
     createTransactionDto.isGuest = true;
+    createTransactionDto.orderType = 'ONLINE'; // Force ONLINE for guest
     return this.transactionsService.create(createTransactionDto, undefined);
   }
 
@@ -108,6 +109,7 @@ export class TransactionsController {
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async create(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
     const userId = req.user?.id;
+    // Don't force ONLINE here, POS uses default OFFLINE or can specify
     return this.transactionsService.create(createTransactionDto, userId);
   }
 
@@ -118,6 +120,7 @@ export class TransactionsController {
     createTransactionDto.customerName = req.user.name;
     createTransactionDto.customerPhone = req.user.phone;
     createTransactionDto.isGuest = false;
+    createTransactionDto.orderType = 'ONLINE'; // Force ONLINE for customer
 
     return this.transactionsService.create(createTransactionDto, undefined);
   }
@@ -125,7 +128,7 @@ export class TransactionsController {
   // ========== ADMIN ENDPOINTS ==========
   @Post(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
   async confirmPayment(@Param('id') id: string, @Request() req) {
     console.log(`🔹 Confirm payment endpoint called for transaction: ${id}`);
     console.log(`🔹 Admin: ${req.user?.id} - ${req.user?.username}`);
