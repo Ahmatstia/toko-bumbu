@@ -217,16 +217,16 @@ export class TransactionsService {
 
     const sales = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .select('DATE(transaction.createdAt)', 'date')
+      .select('DATE(transaction.created_at)', 'date') // Use created_at
       .addSelect('SUM(transaction.total)', 'total')
-      .where('transaction.createdAt BETWEEN :start AND :end', { start: startDate, end: endDate })
+      .where('transaction.created_at BETWEEN :start AND :end', { start: startDate, end: endDate })
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .groupBy('DATE(transaction.createdAt)')
+      .groupBy('DATE(transaction.created_at)')
       .orderBy('date', 'ASC')
       .getRawMany();
 
     // Generate last 7 days
-    const result: { date: string; total: number }[] = []; // <-- TAMBAHKAN TYPE
+    const result: { date: string; total: number }[] = [];
     for (let i = 0; i < 7; i++) {
       const date = subDays(endDate, 6 - i);
       const dateStr = date.toISOString().split('T')[0];
@@ -240,34 +240,29 @@ export class TransactionsService {
     return result;
   }
 
-  async getMonthlySales(startDate?: Date, endDate?: Date) {
-    if (!startDate) {
-      startDate = new Date();
-      startDate.setDate(startDate.getDate() - 30);
-    }
+  async getMonthlySales() {
+    const endDate = new Date();
+    const startDate = subDays(endDate, 30); // Last 30 days
 
-    if (!endDate) {
-      endDate = new Date();
-    }
-
-    endDate.setHours(23, 59, 59, 999);
-
+    // Group by week using DATE_FORMAT %v (week number) or similar
+    // For simplicity and better visual: group by 7-day windows or actual weeks
     const sales = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .select("DATE_FORMAT(transaction.created_at, '%Y-%m')", 'month') // <-- PERBAIKAN: created_at
-      .addSelect('COUNT(transaction.id)', 'count')
+      .select("DATE_FORMAT(transaction.created_at, 'Week %v')", 'week')
       .addSelect('SUM(transaction.total)', 'total')
       .where('transaction.created_at BETWEEN :start AND :end', {
-        // <-- PERBAIKAN: created_at
         start: startDate,
         end: endDate,
       })
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .groupBy("DATE_FORMAT(transaction.created_at, '%Y-%m')") // <-- PERBAIKAN: created_at
-      .orderBy('month', 'ASC')
+      .groupBy("DATE_FORMAT(transaction.created_at, 'Week %v')")
+      .orderBy('week', 'ASC')
       .getRawMany();
 
-    return sales;
+    return sales.map(s => ({
+      week: s.week,
+      total: parseFloat(s.total) || 0
+    }));
   }
 
   async getDailySales(startDate?: Date, endDate?: Date) {
@@ -862,10 +857,10 @@ export class TransactionsService {
 
     return {
       date: new Date().toISOString().split('T')[0],
-      totalTransactions: parseInt(result.count) || 0,
-      totalSales: parseFloat(result.total) || 0,
-      totalPayment: parseFloat(result.payment) || 0,
-      averageTransaction: parseFloat(result.average) || 0,
+      count: parseInt(result.count) || 0,
+      total: parseFloat(result.total) || 0,
+      payment: parseFloat(result.payment) || 0,
+      average: parseFloat(result.average) || 0,
     };
   }
 }
