@@ -85,7 +85,7 @@ export class InventoryService {
       };
 
       stock = await queryRunner.manager.findOne(Stock, {
-        where: whereCondition as any,
+        where: whereCondition as Record<string, unknown>,
       });
 
       const stockBefore = stock?.quantity || 0;

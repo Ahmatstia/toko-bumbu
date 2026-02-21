@@ -8,13 +8,20 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserRole } from '../users/entities/user.entity';
 
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    role: UserRole;
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Request() req, @Body() loginDto: LoginDto) {
+  async login(@Request() req: AuthenticatedRequest, @Body() loginDto: LoginDto) {
     // LoginDto untuk validasi, req.user dari LocalAuthGuard
     return this.authService.login(loginDto);
   }
@@ -22,14 +29,14 @@ export class AuthController {
   @Post('register')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async register(@Request() req, @Body() registerDto: RegisterDto) {
+  async register(@Request() req: AuthenticatedRequest, @Body() registerDto: RegisterDto) {
     // Hanya OWNER dan MANAGER yang bisa register user baru
     return this.authService.register(registerDto, req.user.role);
   }
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  async getProfile(@Request() req) {
+  async getProfile(@Request() req: AuthenticatedRequest) {
     return this.authService.getProfile(req.user.id);
   }
 }

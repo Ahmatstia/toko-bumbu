@@ -7,6 +7,21 @@ import { Customer } from '../entities/customer.entity';
 import { RegisterCustomerDto } from '../dto/register-customer.dto';
 import { LoginCustomerDto } from '../dto/login-customer.dto';
 
+export interface ValidatedCustomer {
+  id: string;
+  email: string;
+  name: string;
+  phone: string;
+  isActive: boolean;
+  emailVerified: boolean;
+  verificationToken: string | null;
+  lastLogin: Date | null;
+  totalTransactions: number;
+  totalSpent: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class CustomerAuthService {
   constructor(
@@ -15,14 +30,15 @@ export class CustomerAuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateCustomer(email: string, password: string): Promise<any> {
+  async validateCustomer(email: string, password: string): Promise<ValidatedCustomer | null> {
     const customer = await this.customerRepository.findOne({
       where: { email, isActive: true },
     });
 
     if (customer && (await bcrypt.compare(password, customer.password))) {
-      const { password, ...result } = customer;
-      return result;
+      const { password: _pw, ...result } = customer;
+      void _pw;
+      return result as ValidatedCustomer;
     }
     return null;
   }
@@ -52,7 +68,8 @@ export class CustomerAuthService {
 
     await this.customerRepository.save(customer);
 
-    const { password, ...result } = customer;
+    const { password: _pw, ...result } = customer;
+    void _pw;
 
     // Generate token
     const token = this.generateToken(customer);
@@ -83,7 +100,7 @@ export class CustomerAuthService {
     };
   }
 
-  generateToken(customer: any) {
+  generateToken(customer: ValidatedCustomer) {
     const payload = {
       sub: customer.id,
       email: customer.email,
@@ -102,7 +119,8 @@ export class CustomerAuthService {
       throw new UnauthorizedException('Customer not found');
     }
 
-    const { password, ...result } = customer;
+    const { password: _pw, ...result } = customer;
+    void _pw;
     return result;
   }
 }

@@ -14,6 +14,12 @@ import { CustomerJwtGuard } from './auth/guards/customer-jwt.guard';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
+interface CustomerRequest extends Request {
+  user: {
+    id: string;
+  };
+}
+
 @Controller('customer')
 @UseGuards(CustomerJwtGuard)
 export class CustomersController {
@@ -21,29 +27,29 @@ export class CustomersController {
 
   // Pindahkan update profile ke sini
   @Patch('profile')
-  async updateProfile(@Request() req, @Body() updateDto: UpdateProfileDto) {
+  async updateProfile(@Request() req: CustomerRequest, @Body() updateDto: UpdateProfileDto) {
     return this.customersService.updateProfile(req.user.id, updateDto);
   }
 
   @Get('transactions')
-  async getTransactions(@Request() req) {
+  async getTransactions(@Request() req: CustomerRequest) {
     return this.customersService.getTransactions(req.user.id);
   }
 
   // Address endpoints
   @Post('addresses')
-  async addAddress(@Request() req, @Body() createAddressDto: CreateAddressDto) {
+  async addAddress(@Request() req: CustomerRequest, @Body() createAddressDto: CreateAddressDto) {
     return this.customersService.addAddress(req.user.id, createAddressDto);
   }
 
   @Get('addresses')
-  async getAddresses(@Request() req) {
+  async getAddresses(@Request() req: CustomerRequest) {
     return this.customersService.getAddresses(req.user.id);
   }
 
   @Patch('addresses/:addressId')
   async updateAddress(
-    @Request() req,
+    @Request() req: CustomerRequest,
     @Param('addressId') addressId: string,
     @Body() updateDto: Partial<CreateAddressDto>,
   ) {
@@ -51,12 +57,12 @@ export class CustomersController {
   }
 
   @Delete('addresses/:addressId')
-  async deleteAddress(@Request() req, @Param('addressId') addressId: string) {
+  async deleteAddress(@Request() req: CustomerRequest, @Param('addressId') addressId: string) {
     return this.customersService.deleteAddress(req.user.id, addressId);
   }
 
   @Post('addresses/:addressId/default')
-  async setDefaultAddress(@Request() req, @Param('addressId') addressId: string) {
+  async setDefaultAddress(@Request() req: CustomerRequest, @Param('addressId') addressId: string) {
     return this.customersService.setDefaultAddress(req.user.id, addressId);
   }
 }

@@ -47,7 +47,8 @@ export class UsersService {
     const savedUser = await this.usersRepository.save(user);
 
     // Hapus password dari response
-    const { password, ...result } = savedUser;
+    const { password: _pw, ...result } = savedUser;
+    void _pw;
     return result;
   }
 
@@ -84,7 +85,8 @@ export class UsersService {
 
     // Hapus password dari setiap user
     const dataWithoutPassword = data.map((user) => {
-      const { password, ...result } = user;
+      const { password: _pw, ...result } = user;
+      void _pw;
       return result;
     });
 
@@ -108,7 +110,8 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const { password, ...result } = user;
+    const { password: _pw, ...result } = user;
+    void _pw;
     return result;
   }
 
@@ -146,7 +149,8 @@ export class UsersService {
     Object.assign(user, updateUserDto);
     const savedUser = await this.usersRepository.save(user);
 
-    const { password, ...result } = savedUser;
+    const { password: _pw, ...result } = savedUser;
+    void _pw;
     return result;
   }
 

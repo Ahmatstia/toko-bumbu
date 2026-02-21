@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -6,6 +6,18 @@ import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../users/entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+
+export interface ValidatedUser {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  phone: string;
+  email: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 @Injectable()
 export class AuthService {
@@ -15,14 +27,15 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateUser(username: string, password: string): Promise<any> {
+  async validateUser(username: string, password: string): Promise<ValidatedUser | null> {
     const user = await this.userRepository.findOne({
       where: { username, isActive: true },
     });
 
     if (user && (await bcrypt.compare(password, user.password))) {
-      const { password, ...result } = user;
-      return result;
+      const { password: _pw, ...result } = user;
+      void _pw;
+      return result as ValidatedUser;
     }
     return null;
   }
@@ -63,7 +76,7 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Username sudah digunakan');
+      throw new UnauthorizedException('Username sudah digunakan');
     }
 
     // Hash password
@@ -80,7 +93,8 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
-    const { password, ...result } = user;
+    const { password: _pw, ...result } = user;
+    void _pw;
     return result;
   }
 
@@ -93,7 +107,8 @@ export class AuthService {
       throw new UnauthorizedException('User tidak ditemukan');
     }
 
-    const { password, ...result } = user;
+    const { password: _pw, ...result } = user;
+    void _pw;
     return result;
   }
 }

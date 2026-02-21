@@ -19,6 +19,21 @@ import { UserRole } from '../users/entities/user.entity';
 import { TransactionStatus, PaymentMethod } from './entities/transaction.entity';
 import { Public } from '../../common/decorators/public.decorator';
 
+interface AdminRequest extends Request {
+  user: {
+    id: string;
+    username?: string;
+  };
+}
+
+interface CustomerRequest extends Request {
+  user: {
+    id: string;
+    name?: string;
+    phone?: string;
+  };
+}
+
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
@@ -64,7 +79,7 @@ export class TransactionsController {
 
   @Get('customer/history')
   @UseGuards(CustomerJwtGuard)
-  async getCustomerTransactions(@Request() req) {
+  async getCustomerTransactions(@Request() req: CustomerRequest) {
     return this.transactionsService.findByCustomer(req.user.id);
   }
 
@@ -107,7 +122,7 @@ export class TransactionsController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async create(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
+  async create(@Request() req: AdminRequest, @Body() createTransactionDto: CreateTransactionDto) {
     const userId = req.user?.id;
     // Don't force ONLINE here, POS uses default OFFLINE or can specify
     return this.transactionsService.create(createTransactionDto, userId);
@@ -115,7 +130,10 @@ export class TransactionsController {
 
   @Post('customer')
   @UseGuards(CustomerJwtGuard)
-  async createAsCustomer(@Request() req, @Body() createTransactionDto: CreateTransactionDto) {
+  async createAsCustomer(
+    @Request() req: CustomerRequest,
+    @Body() createTransactionDto: CreateTransactionDto,
+  ) {
     createTransactionDto.customerId = req.user.id;
     createTransactionDto.customerName = req.user.name;
     createTransactionDto.customerPhone = req.user.phone;
@@ -129,7 +147,7 @@ export class TransactionsController {
   @Post(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async confirmPayment(@Param('id') id: string, @Request() req) {
+  async confirmPayment(@Param('id') id: string, @Request() req: AdminRequest) {
     console.log(`🔹 Confirm payment endpoint called for transaction: ${id}`);
     console.log(`🔹 Admin: ${req.user?.id} - ${req.user?.username}`);
     return this.transactionsService.confirmPayment(id, req.user.id);
@@ -145,7 +163,11 @@ export class TransactionsController {
   @Post(':id/return')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async processReturn(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+  async processReturn(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Request() req: AdminRequest,
+  ) {
     return this.transactionsService.processReturn(id, reason, req.user.id);
   }
 

@@ -5,7 +5,7 @@ import {
   Transaction,
   TransactionStatus,
   PaymentMethod,
-  OrderType, // <-- TAMBAHKAN OrderType DI SINI
+  OrderType,
 } from './entities/transaction.entity';
 import { TransactionItem } from './entities/transaction-item.entity';
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
@@ -740,10 +740,15 @@ export class TransactionsService {
             );
 
             // Ambil info stok terbaru untuk log inventory
-            const currentStock = await queryRunner.manager.query(
-              `SELECT * FROM stocks WHERE id = ?`,
-              [item.stockId],
-            );
+            const currentStock = await queryRunner.manager.query<
+              {
+                quantity: number;
+                batchCode: string | null;
+                expiryDate: Date | null;
+                purchasePrice: number | null;
+                sellingPrice: number | null;
+              }[]
+            >(`SELECT * FROM stocks WHERE id = ?`, [item.stockId]);
 
             const stock = currentStock[0];
 

@@ -5,6 +5,10 @@ import { Product } from '../products/entities/product.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Transaction, TransactionStatus } from '../transactions/entities/transaction.entity';
 
+interface RevenueResult {
+  total: string | null;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -17,7 +21,7 @@ export class AdminService {
   ) {}
 
   async getSummary() {
-    const [totalProducts, totalCustomers, totalTransactions, totalRevenue, pendingTransactions] =
+    const [totalProducts, totalCustomers, totalTransactions, revenueResult, pendingTransactions] =
       await Promise.all([
         this.productRepository.count(),
         this.customerRepository.count(),
@@ -26,7 +30,7 @@ export class AdminService {
           .createQueryBuilder('transaction')
           .select('SUM(transaction.total)', 'total')
           .where('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-          .getRawOne(),
+          .getRawOne<RevenueResult>(),
         this.transactionRepository.count({
           where: { status: TransactionStatus.PENDING },
         }),
@@ -36,7 +40,7 @@ export class AdminService {
       totalProducts,
       totalCustomers,
       totalTransactions,
-      totalRevenue: totalRevenue?.total || 0,
+      totalRevenue: revenueResult?.total ? parseFloat(revenueResult.total) : 0,
       pendingTransactions,
     };
   }

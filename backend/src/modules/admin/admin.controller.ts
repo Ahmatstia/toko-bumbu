@@ -1,10 +1,6 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../users/entities/user.entity';
+import { Controller, Get } from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { Public } from '../../common/decorators/public.decorator'; // IMPORT Public decorator
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('admin')
 export class AdminController {

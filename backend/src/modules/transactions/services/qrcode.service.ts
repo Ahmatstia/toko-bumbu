@@ -1,5 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import * as QRCode from 'qrcode';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const QRCode = require('qrcode') as {
+  toDataURL: (text: string, options?: Record<string, unknown>) => Promise<string>;
+  toBuffer: (text: string, options?: Record<string, unknown>) => Promise<Buffer>;
+};
+
+interface TransactionQRData {
+  invoiceNumber: string;
+  total: number;
+  paymentCode: string;
+  paymentMethod: string;
+}
 
 @Injectable()
 export class QRCodeService {
@@ -8,7 +19,7 @@ export class QRCodeService {
    * @param data Data yang akan diencode (bisa string atau object)
    * @returns Promise<string> Data URL QR Code
    */
-  async generateQRCode(data: any): Promise<string> {
+  async generateQRCode(data: unknown): Promise<string> {
     try {
       // Konversi data ke string JSON jika object
       const text = typeof data === 'string' ? data : JSON.stringify(data);
@@ -36,7 +47,7 @@ export class QRCodeService {
    * @param transaction Data transaksi
    * @returns Promise<string> Data URL QR Code
    */
-  async generatePaymentQRCode(transaction: any): Promise<string> {
+  async generatePaymentQRCode(transaction: TransactionQRData): Promise<string> {
     // Data yang akan diencode dalam QR Code
     const paymentData = {
       type: 'PAYMENT',
@@ -56,7 +67,7 @@ export class QRCodeService {
    * @param data Data yang akan diencode
    * @returns Promise<Buffer> Buffer QR Code
    */
-  async generateQRCodeBuffer(data: any): Promise<Buffer> {
+  async generateQRCodeBuffer(data: unknown): Promise<Buffer> {
     const text = typeof data === 'string' ? data : JSON.stringify(data);
 
     const buffer = await QRCode.toBuffer(text, {

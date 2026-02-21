@@ -6,6 +6,10 @@ import { Category } from './entities/category.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
+interface MySqlDupError {
+  code?: string;
+}
+
 @Injectable()
 export class CategoriesService {
   constructor(
@@ -17,8 +21,8 @@ export class CategoriesService {
     try {
       const category = this.categoryRepository.create(createCategoryDto);
       return await this.categoryRepository.save(category);
-    } catch (error) {
-      if (error.code === 'ER_DUP_ENTRY') {
+    } catch (error: unknown) {
+      if ((error as MySqlDupError).code === 'ER_DUP_ENTRY') {
         throw new ConflictException('Category with this name already exists');
       }
       throw error;
@@ -77,8 +81,8 @@ export class CategoriesService {
 
     try {
       return await this.categoryRepository.save(category);
-    } catch (error) {
-      if (error.code === 'ER_DUP_ENTRY') {
+    } catch (error: unknown) {
+      if ((error as MySqlDupError).code === 'ER_DUP_ENTRY') {
         throw new ConflictException('Category with this name already exists');
       }
       throw error;

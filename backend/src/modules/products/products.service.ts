@@ -424,7 +424,8 @@ export class ProductsService {
       }
     }
 
-    const { categoryId: _, ...updateData } = updateProductDto;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { categoryId: _unused, ...updateData } = updateProductDto;
     Object.assign(product, updateData);
 
     if (updateProductDto.categoryId) {

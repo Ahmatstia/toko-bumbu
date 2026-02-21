@@ -6,6 +6,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../../entities/customer.entity';
 
+interface CustomerJwtPayload {
+  sub: string;
+  email: string;
+  type: string;
+}
+
 @Injectable()
 export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jwt') {
   constructor(
@@ -26,7 +32,7 @@ export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jw
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: CustomerJwtPayload) {
     if (payload.type !== 'customer') {
       throw new UnauthorizedException('Invalid token type');
     }
@@ -39,7 +45,8 @@ export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jw
       throw new UnauthorizedException('Customer not found or inactive');
     }
 
-    const { password, ...result } = customer;
+    const { password: _pw, ...result } = customer;
+    void _pw;
     return result;
   }
 }

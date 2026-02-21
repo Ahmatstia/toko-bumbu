@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import type { FileFilterCallback } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ProductsService } from './products.service';
@@ -36,9 +37,13 @@ const storage = diskStorage({
   },
 });
 
-const fileFilter = (req: any, file: any, callback: any) => {
+const fileFilter = (
+  _req: Express.Request,
+  file: Express.Multer.File,
+  callback: FileFilterCallback,
+) => {
   if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-    return callback(new Error('Only image files are allowed!'), false);
+    return callback(new Error('Only image files are allowed!'));
   }
   callback(null, true);
 };
@@ -184,7 +189,9 @@ export class ProductsController {
   @Patch('images/order')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.STAFF)
-  async updateImageOrder(@Body() body: { productId: string; imageOrders: any[] }) {
+  async updateImageOrder(
+    @Body() body: { productId: string; imageOrders: { id: string; sortOrder: number }[] },
+  ) {
     return this.productsService.updateImageOrder(body.productId, body.imageOrders);
   }
 }
