@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import {
   Transaction,
   TransactionStatus,
@@ -114,7 +114,10 @@ export class TransactionsService {
   }
 
   // Validasi stok (cek ketersediaan - tidak kurangi)
-  private async validateStock(items: AddToCartDto[]): Promise<ValidatedItem[]> {
+  private async validateStock(
+    items: AddToCartDto[],
+    manager?: EntityManager,
+  ): Promise<ValidatedItem[]> {
     console.log('Validating stock for items:', JSON.stringify(items, null, 2));
 
     const validatedItems: ValidatedItem[] = [];
@@ -122,7 +125,8 @@ export class TransactionsService {
     for (const item of items) {
       console.log(`Checking product ID: ${item.productId}`);
 
-      const product = await this.productRepository.findOne({
+      const productRepo = manager ? manager.getRepository(Product) : this.productRepository;
+      const product = await productRepo.findOne({
         where: { id: item.productId, isActive: true },
       });
 
@@ -134,7 +138,11 @@ export class TransactionsService {
       console.log(`Product found: ${product.name}`);
 
       // Hitung total reservasi aktif untuk produk ini
-      const activeReservations = await this.reservationRepository
+      const reservationRepo = manager
+        ? manager.getRepository(Reservation)
+        : this.reservationRepository;
+
+      const activeReservations = await reservationRepo
         .createQueryBuilder('reservation')
         .where('reservation.productId = :productId', { productId: item.productId })
         .andWhere('reservation.status = :status', { status: ReservationStatus.ACTIVE })
@@ -144,13 +152,19 @@ export class TransactionsService {
       console.log(`Active reservations: ${reservedQuantity}`);
 
       // Cari stok yang available
-      let stockQuery = this.stockRepository
+      const stockRepo = manager ? manager.getRepository(Stock) : this.stockRepository;
+      let stockQuery = stockRepo
         .createQueryBuilder('stock')
         .where('stock.productId = :productId', { productId: item.productId })
         .andWhere('stock.quantity > 0')
         .andWhere('(stock.expiryDate IS NULL OR stock.expiryDate > CURRENT_DATE())') // Filter expired
         .orderBy('stock.expiryDate', 'ASC')
         .addOrderBy('stock.createdAt', 'ASC');
+
+      // PENTING: Gunakan locking jika di dalam transaction
+      if (manager) {
+        stockQuery = stockQuery.setLock('pessimistic_write');
+      }
 
       if (item.stockId) {
         stockQuery = stockQuery.andWhere('stock.id = :stockId', { stockId: item.stockId });
@@ -221,6 +235,7 @@ export class TransactionsService {
   private async createReservations(
     transactionId: string,
     validatedItems: ValidatedItem[],
+    manager?: EntityManager,
     expiresInHours: number = 24,
   ) {
     console.log(`Creating reservations for transaction: ${transactionId}`);
@@ -245,7 +260,10 @@ export class TransactionsService {
         reservation.expiresAt = expiresAt;
         reservation.status = ReservationStatus.ACTIVE;
 
-        const saved = await this.reservationRepository.save(reservation);
+        const reservationRepo = manager
+          ? manager.getRepository(Reservation)
+          : this.reservationRepository;
+        const saved = await reservationRepo.save(reservation);
         reservations.push(saved);
         console.log(`    ✅ Reservation created with ID: ${saved.id}`);
       }
@@ -402,37 +420,16 @@ export class TransactionsService {
       throw new BadRequestException('Items tidak boleh kosong');
     }
 
-    const validatedItems = await this.validateStock(items);
-
-    const subtotal = validatedItems.reduce((sum, item) => {
-      return sum + item.price * item.quantity;
-    }, 0);
-
-    const total = subtotal - discount;
-
-    // Untuk CASH, validasi pembayaran harus pas
-    if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
-      throw new BadRequestException(
-        `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
-      );
-    }
-
-    const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
-    const invoiceNumber = await this.generateInvoiceNumber();
-
     // ========== LOGIKA EXPIRY (E-commerce Standard) ==========
     const expiresAt = new Date();
     if (orderType === 'ONLINE') {
       if (paymentMethod === PaymentMethod.CASH) {
-        // Cash ONLINE (Bayar di Toko): Kasih 4 jam untuk datang
         expiresAt.setHours(expiresAt.getHours() + 4);
       } else {
-        // Transfer/QRIS: Kasih 24 jam (sesuai standar lama)
         expiresAt.setHours(expiresAt.getHours() + 24);
       }
     } else {
-      // OFFLINE: Tidak ada expiry karena langsung selesai
-      expiresAt.setHours(expiresAt.getHours() + 24); // Placeholder, but won't be used
+      expiresAt.setHours(expiresAt.getHours() + 24);
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -440,6 +437,25 @@ export class TransactionsService {
     await queryRunner.startTransaction();
 
     try {
+      // PENTING: Validasi stok sekarang di DALAM transaction agar locking bekerja
+      const validatedItems = await this.validateStock(items, queryRunner.manager);
+
+      const subtotal = validatedItems.reduce((sum, item) => {
+        return sum + item.price * item.quantity;
+      }, 0);
+
+      const total = subtotal - discount;
+
+      // Untuk CASH, validasi pembayaran harus pas
+      if (paymentMethod === PaymentMethod.CASH && paymentAmount < total) {
+        throw new BadRequestException(
+          `Pembayaran kurang: Rp ${(total - paymentAmount).toLocaleString()}`,
+        );
+      }
+
+      const changeAmount = paymentMethod === PaymentMethod.CASH ? paymentAmount - total : 0;
+      const invoiceNumber = await this.generateInvoiceNumber();
+
       const transaction = new Transaction();
       transaction.invoiceNumber = invoiceNumber;
       transaction.userId = userId || null;
@@ -459,11 +475,11 @@ export class TransactionsService {
       if (orderType === 'ONLINE') {
         // Pesanan online: PENDING dulu (tunggu pembayaran)
         transaction.status = TransactionStatus.PENDING;
-        transaction.orderType = OrderType.ONLINE; // <-- PAKAI ENUM
+        transaction.orderType = OrderType.ONLINE;
       } else {
         // Pesanan offline (kasir): LANGSUNG COMPLETED
         transaction.status = TransactionStatus.COMPLETED;
-        transaction.orderType = OrderType.OFFLINE; // <-- PAKAI ENUM
+        transaction.orderType = OrderType.OFFLINE;
       }
 
       transaction.notes = notes || null;
@@ -495,7 +511,7 @@ export class TransactionsService {
       if (orderType === 'ONLINE') {
         // Online: BUAT RESERVASI (HOLD STOK)
         console.log('Creating reservations for ONLINE order...');
-        await this.createReservations(savedTransaction.id, validatedItems);
+        await this.createReservations(savedTransaction.id, validatedItems, queryRunner.manager);
       } else {
         // Offline: LANGSUNG KURANGI STOK
         console.log('Offline order - reducing stock immediately...');
