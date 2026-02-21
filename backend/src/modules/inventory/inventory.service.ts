@@ -342,16 +342,25 @@ export class InventoryService {
         }
 
         if (s.sellingPrice) {
-          group.minSellingPrice = group.minSellingPrice === 0 ? s.sellingPrice : Math.min(group.minSellingPrice, s.sellingPrice);
+          group.minSellingPrice =
+            group.minSellingPrice === 0
+              ? s.sellingPrice
+              : Math.min(group.minSellingPrice, s.sellingPrice);
           group.maxSellingPrice = Math.max(group.maxSellingPrice, s.sellingPrice);
         }
 
         if (s.purchasePrice) {
-          group.minPurchasePrice = group.minPurchasePrice === 0 ? s.purchasePrice : Math.min(group.minPurchasePrice, s.purchasePrice);
+          group.minPurchasePrice =
+            group.minPurchasePrice === 0
+              ? s.purchasePrice
+              : Math.min(group.minPurchasePrice, s.purchasePrice);
           group.maxPurchasePrice = Math.max(group.maxPurchasePrice, s.purchasePrice);
         }
 
-        if (s.expiryDate && (!group.earliestExpiryDate || new Date(s.expiryDate) < new Date(group.earliestExpiryDate))) {
+        if (
+          s.expiryDate &&
+          (!group.earliestExpiryDate || new Date(s.expiryDate) < new Date(group.earliestExpiryDate))
+        ) {
           group.earliestExpiryDate = s.expiryDate;
         }
       });

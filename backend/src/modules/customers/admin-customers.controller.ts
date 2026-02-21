@@ -1,18 +1,10 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-  Body,
-  Param,
-  Patch,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Body, Param, Patch, Delete } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -41,7 +33,7 @@ export class AdminCustomersController {
 
   @Patch(':id')
   @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async update(@Param('id') id: string, @Body() updateDto: any) {
+  async update(@Param('id') id: string, @Body() updateDto: UpdateProfileDto) {
     return this.customersService.update(id, updateDto);
   }
 

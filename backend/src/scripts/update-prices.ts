@@ -30,9 +30,9 @@ async function updatePrices() {
 
   // Buat mapping harga berdasarkan kategori
   const priceMap: { [key: string]: number } = {};
-  
+
   // Set harga default per kategori (bisa disesuaikan)
-  categories.forEach(cat => {
+  categories.forEach((cat) => {
     if (cat.name.toLowerCase().includes('kue')) {
       priceMap[cat.id] = 7500;
     } else if (cat.name.toLowerCase().includes('rempah')) {
@@ -68,7 +68,7 @@ async function updatePrices() {
 
   // 1. Ambil semua produk
   const products = await productRepo.find({
-    relations: ['category'] // <-- LOAD RELASI CATEGORY
+    relations: ['category'], // <-- LOAD RELASI CATEGORY
   });
   console.log(`📊 Found ${products.length} products`);
 
@@ -79,13 +79,13 @@ async function updatePrices() {
   for (const product of products) {
     // Cek apakah produk sudah punya stok
     const existingStocks = await stockRepo.find({
-      where: { productId: product.id }
+      where: { productId: product.id },
     });
 
     if (existingStocks.length === 0) {
       // Dapatkan harga berdasarkan kategori
-      let sellingPrice = priceMap[product.categoryId] || 5000;
-      
+      const sellingPrice = priceMap[product.categoryId] || 5000;
+
       // Buat stok baru
       const stock = new Stock();
       stock.productId = product.id;
@@ -96,7 +96,9 @@ async function updatePrices() {
       stock.isActive = true;
 
       await stockRepo.save(stock);
-      console.log(`✅ Added stock for ${product.name} (${product.category?.name || 'Unknown'}): ${stock.quantity} units @ Rp ${sellingPrice}`);
+      console.log(
+        `✅ Added stock for ${product.name} (${product.category?.name || 'Unknown'}): ${stock.quantity} units @ Rp ${sellingPrice}`,
+      );
       addedCount++;
     } else {
       console.log(`⏭️ ${product.name} already has ${existingStocks.length} stock entries`);
@@ -104,19 +106,19 @@ async function updatePrices() {
     }
 
     // Delay kecil biar ga overload
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
   console.log('\n📊 Summary:');
   console.log(`✅ Added: ${addedCount} products`);
   console.log(`⏭️ Skipped: ${skippedCount} products`);
   console.log(`📦 Total: ${products.length} products`);
-  
+
   await dataSource.destroy();
   console.log('✨ Done!');
 }
 
-updatePrices().catch(error => {
+updatePrices().catch((error) => {
   console.error('❌ Error:', error);
   process.exit(1);
 });

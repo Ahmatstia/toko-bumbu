@@ -29,8 +29,10 @@ export class CustomersService {
     Object.assign(customer, updateDto);
     await this.customerRepository.save(customer);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = customer;
+    const result = { ...customer };
+    if ('password' in result) {
+      delete (result as Partial<Customer>).password;
+    }
     return result;
   }
 
@@ -155,15 +157,15 @@ export class CustomersService {
     const total = await this.customerRepository.count();
     const active = await this.customerRepository.count({ where: { isActive: true } });
 
-    const totalSpent = await this.customerRepository
+    const totalSpentResult = (await this.customerRepository
       .createQueryBuilder('customer')
       .select('SUM(customer.totalSpent)', 'total')
-      .getRawOne();
+      .getRawOne()) as { total: string | null };
 
     return {
       totalCustomers: total,
       activeCustomers: active,
-      totalSpent: totalSpent?.total || 0,
+      totalSpent: parseFloat(totalSpentResult?.total || '0'),
     };
   }
 
@@ -190,7 +192,7 @@ export class CustomersService {
     return customer;
   }
 
-  async update(id: string, updateDto: any) {
+  async update(id: string, updateDto: UpdateProfileDto) {
     const customer = await this.findOne(id);
     Object.assign(customer, updateDto);
     return this.customerRepository.save(customer);

@@ -53,6 +53,15 @@ const Customers: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const observer = useRef<IntersectionObserver | null>(null);
+
+  // Load more customers
+  const loadMoreCustomers = useCallback(() => {
+    if (isLoadingMore || !hasMore) return;
+    console.log("Loading more... Next page:", page + 1);
+    setIsLoadingMore(true);
+    setPage((prev) => prev + 1);
+  }, [isLoadingMore, hasMore, page]);
+
   const lastCustomerRef = useCallback(
     (node: HTMLDivElement) => {
       if (isLoadingMore) return;
@@ -66,7 +75,7 @@ const Customers: React.FC = () => {
 
       if (node) observer.current.observe(node);
     },
-    [isLoadingMore, hasMore],
+    [isLoadingMore, hasMore, loadMoreCustomers],
   );
 
   // Debounce search
@@ -110,28 +119,14 @@ const Customers: React.FC = () => {
     if (data) {
       if (page === 1) {
         setAllCustomers(data.data || []);
-        console.log("Page 1 customers:", data.data?.length);
       } else {
         setAllCustomers((prev) => [...prev, ...(data.data || [])]);
-        console.log(
-          "Appending page",
-          page,
-          "total now:",
-          allCustomers.length + (data.data?.length || 0),
-        );
       }
       setTotalData(data.meta?.total || 0);
       setHasMore(page < data.meta?.totalPages);
+      setIsLoadingMore(false);
     }
   }, [data, page]);
-
-  // Load more customers
-  const loadMoreCustomers = useCallback(() => {
-    if (isLoadingMore || !hasMore) return;
-    console.log("Loading more... Next page:", page + 1);
-    setIsLoadingMore(true);
-    setPage((prev) => prev + 1);
-  }, [isLoadingMore, hasMore, page]);
 
   const handleToggleStatus = async (id: string) => {
     try {
@@ -193,7 +188,6 @@ const Customers: React.FC = () => {
             onClick={async () => {
               try {
                 const res = await api.post("/transactions/sync-all-stats");
-                // eslint-disable-next-line @typescript-eslint/no-var-requires
                 const toast = (await import("react-hot-toast")).default;
                 toast.success(`Berhasil sinkronisasi ${res.data.success} customer!`);
                 refetch();
@@ -208,7 +202,6 @@ const Customers: React.FC = () => {
             <ArrowPathIcon className="h-5 w-5 text-gray-500" />
             Sync Data Historis
           </button>
-          {/* Total Data Badge */}
           {totalData > 0 && (
             <div className="bg-primary-50 border-2 border-primary-200 rounded-xl px-4 py-2">
               <p className="text-sm text-gray-600">Total Customer</p>
@@ -221,7 +214,6 @@ const Customers: React.FC = () => {
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
           <div className="relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
@@ -233,7 +225,6 @@ const Customers: React.FC = () => {
             />
           </div>
 
-          {/* Date Filter */}
           <input
             type="date"
             value={dateFilter}
@@ -242,7 +233,6 @@ const Customers: React.FC = () => {
             placeholder="Filter tanggal daftar"
           />
 
-          {/* Reset Filters */}
           <div className="flex justify-end">
             <button
               onClick={() => {
@@ -258,14 +248,12 @@ const Customers: React.FC = () => {
         </div>
       </div>
 
-      {/* Results Info */}
       <div className="flex justify-between items-center px-4">
         <p className="text-sm text-gray-600">
           Menampilkan {allCustomers.length} dari {totalData} customer
         </p>
       </div>
 
-      {/* Customers Table */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -297,7 +285,7 @@ const Customers: React.FC = () => {
             <tbody>
               {allCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500">
+                  <td colSpan={7} className="text-center py-8 text-gray-500">
                     Tidak ada customer
                   </td>
                 </tr>
@@ -390,14 +378,12 @@ const Customers: React.FC = () => {
           </table>
         </div>
 
-        {/* Loading indicator */}
         {isLoadingMore && (
           <div className="flex justify-center py-4 border-t border-gray-200">
             <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
         )}
 
-        {/* End of data message */}
         {!hasMore &&
           allCustomers.length > 0 &&
           allCustomers.length >= totalData && (
@@ -409,7 +395,6 @@ const Customers: React.FC = () => {
           )}
       </div>
 
-      {/* Edit Customer Modal */}
       {isEditModalOpen && selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">

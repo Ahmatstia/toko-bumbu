@@ -8,9 +8,7 @@ import { Category } from '../categories/entities/category.entity';
 import { Stock } from '../inventory/entities/stock.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Product, ProductImage, Category, Stock]),
-  ],
+  imports: [TypeOrmModule.forFeature([Product, ProductImage, Category, Stock])],
   controllers: [ProductsController],
   providers: [ProductsService],
   exports: [ProductsService],

@@ -29,7 +29,9 @@ export class InventoryCron implements OnModuleInit {
     this.logger.log('🕛 [Cron] Starting automated expired stock processing...');
     try {
       const results = await this.inventoryService.checkExpiredProducts();
-      this.logger.log(`✅ [Cron] Expired stock processing completed. Found ${results.processed} items.`);
+      this.logger.log(
+        `✅ [Cron] Expired stock processing completed. Found ${results.processed} items.`,
+      );
     } catch (error) {
       this.logger.error('❌ [Cron] Failed to process expired stock automatically:', error);
     }

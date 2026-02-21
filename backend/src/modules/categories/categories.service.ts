@@ -32,9 +32,12 @@ export class CategoriesService {
       .loadRelationCountAndMap('category.productCount', 'category.products');
 
     if (search) {
-      query.where('LOWER(category.name) LIKE LOWER(:search) OR LOWER(category.description) LIKE LOWER(:search)', {
-        search: `%${search}%`,
-      });
+      query.where(
+        'LOWER(category.name) LIKE LOWER(:search) OR LOWER(category.description) LIKE LOWER(:search)',
+        {
+          search: `%${search}%`,
+        },
+      );
     }
 
     const [data, total] = await query

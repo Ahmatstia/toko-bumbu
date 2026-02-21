@@ -14,6 +14,19 @@ import { Stock } from '../inventory/entities/stock.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
+export interface StockInfo {
+  quantity: number;
+  price: number;
+}
+
+export interface ProductStat {
+  id: string;
+  name: string;
+  image: string;
+  sold: number;
+  revenue: number;
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -77,7 +90,7 @@ export class ProductsService {
       .groupBy('stock.productId')
       .getRawMany<{ productId: string; totalStock: string; price: string }>();
 
-    const stockMap = stocks.reduce(
+    const stockMap: Record<string, StockInfo> = stocks.reduce(
       (acc, curr) => {
         acc[curr.productId] = {
           quantity: parseInt(curr.totalStock) || 0,
@@ -85,7 +98,7 @@ export class ProductsService {
         };
         return acc;
       },
-      {} as Record<string, { quantity: number; price: number }>,
+      {} as Record<string, StockInfo>,
     );
 
     return products.map((product) => {
@@ -203,7 +216,7 @@ export class ProductsService {
 
     // Optimasi N+1: Ambil semua stok untuk produk yang ada dalam list
     const productIds = data.map((p) => p.id);
-    let stockMap = {};
+    let stockMap: Record<string, StockInfo> = {};
 
     if (productIds.length > 0) {
       const stocks = await this.stockRepository
@@ -224,14 +237,12 @@ export class ProductsService {
           };
           return acc;
         },
-        {} as Record<string, { quantity: number; price: number }>,
+        {} as Record<string, StockInfo>,
       );
     }
 
     const enhancedData = data.map((product) => {
-      const stockInfo = (stockMap as Record<string, { quantity: number; price: number }>)[
-        product.id
-      ] || { quantity: 0, price: 0 };
+      const stockInfo = stockMap[product.id] || { quantity: 0, price: 0 };
       return {
         ...product,
         stockQuantity: stockInfo.quantity,
@@ -370,8 +381,8 @@ export class ProductsService {
     }));
   }
 
-  async getTopProducts(limit: number = 5) {
-    const products = await this.productRepository
+  async getTopProducts(limit: number = 5): Promise<ProductStat[]> {
+    const results = await this.productRepository
       .createQueryBuilder('product')
       .leftJoin('transaction_items', 'item', 'item.product_id = product.id')
       .leftJoin('transactions', 'transaction', 'transaction.id = item.transaction_id')
@@ -384,9 +395,21 @@ export class ProductsService {
       .groupBy('product.id')
       .orderBy('sold', 'DESC')
       .limit(limit)
-      .getRawMany();
+      .getRawMany<{
+        id: string;
+        name: string;
+        image: string;
+        sold: string;
+        revenue: string;
+      }>();
 
-    return products;
+    return results.map((item) => ({
+      id: item.id,
+      name: item.name,
+      image: item.image,
+      sold: parseInt(item.sold) || 0,
+      revenue: parseFloat(item.revenue) || 0,
+    }));
   }
 
   async update(id: string, updateProductDto: UpdateProductDto, newImageUrls: string[] = []) {
@@ -401,7 +424,7 @@ export class ProductsService {
       }
     }
 
-    const { categoryId, ...updateData } = updateProductDto;
+    const { categoryId: _, ...updateData } = updateProductDto;
     Object.assign(product, updateData);
 
     if (updateProductDto.categoryId) {

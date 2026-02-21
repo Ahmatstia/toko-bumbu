@@ -18,6 +18,57 @@ import { AddToCartDto } from './dto/add-to-cart.dto';
 import { subDays } from 'date-fns';
 import { Customer } from '../customers/entities/customer.entity';
 
+// Interface untuk alokasi stok
+interface StockAllocation {
+  stock: Stock;
+  quantity: number;
+}
+
+// Interface untuk item yang sudah divalidasi
+interface ValidatedItem {
+  product: Product;
+  allocations: StockAllocation[];
+  quantity: number;
+  price: number;
+}
+
+// Interface untuk hasil query statistik mingguan/bulanan
+interface MonthlySalesResult {
+  date: string;
+  total: string;
+}
+
+// Interface untuk hasil query transaksi (raw)
+interface RawTransaction {
+  id: string;
+  invoice_number: string;
+  status: TransactionStatus;
+  customer_id?: string;
+  total: string | number;
+}
+
+// Interface untuk hasil query reservasi (raw)
+interface RawReservation {
+  id: string;
+  stock_id: string;
+  product_id: string;
+  quantity: number;
+  status: string;
+  stock_quantity: number;
+  batch_code: string;
+  expiry_date: Date;
+  purchase_price: number;
+  selling_price: number;
+  product_name: string;
+}
+
+// Interface untuk hasil query mysql affectedRows
+interface MySqlResult {
+  affectedRows?: number;
+  insertId?: number;
+  [key: number]: any; // Untuk menangani format array [ { affectedRows: ... }, ... ]
+}
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -63,20 +114,8 @@ export class TransactionsService {
   }
 
   // Validasi stok (cek ketersediaan - tidak kurangi)
-  private async validateStock(items: AddToCartDto[]): Promise<any[]> {
+  private async validateStock(items: AddToCartDto[]): Promise<ValidatedItem[]> {
     console.log('Validating stock for items:', JSON.stringify(items, null, 2));
-
-    type StockAllocation = {
-      stock: Stock;
-      quantity: number;
-    };
-
-    type ValidatedItem = {
-      product: Product;
-      allocations: StockAllocation[];
-      quantity: number;
-      price: number;
-    };
 
     const validatedItems: ValidatedItem[] = [];
 
@@ -181,7 +220,7 @@ export class TransactionsService {
   // Buat reservasi stok (HOLD)
   private async createReservations(
     transactionId: string,
-    validatedItems: any[],
+    validatedItems: ValidatedItem[],
     expiresInHours: number = 24,
   ) {
     console.log(`Creating reservations for transaction: ${transactionId}`);
@@ -228,7 +267,7 @@ export class TransactionsService {
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
       .groupBy('DATE(transaction.created_at)')
       .orderBy('date', 'ASC')
-      .getRawMany();
+      .getRawMany<{ date: string; total: string }>();
 
     // Generate last 7 days
     const result: { date: string; total: number }[] = [];
@@ -249,24 +288,19 @@ export class TransactionsService {
     const endDate = new Date();
     const startDate = subDays(endDate, 30); // Last 30 days
 
-    // Group by week using DATE_FORMAT %v (week number) or similar
-    // For simplicity and better visual: group by 7-day windows or actual weeks
-    const sales = await this.transactionRepository
-      .createQueryBuilder('transaction')
-      .select("DATE_FORMAT(transaction.created_at, 'Week %v')", 'week')
-      .addSelect('SUM(transaction.total)', 'total')
-      .where('transaction.created_at BETWEEN :start AND :end', {
-        start: startDate,
-        end: endDate,
-      })
-      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .groupBy("DATE_FORMAT(transaction.created_at, 'Week %v')")
-      .orderBy('week', 'ASC')
-      .getRawMany();
+    // Group by day for the last 30 days
+    const results = await this.transactionRepository.query<MonthlySalesResult[]>(
+      `SELECT DATE(created_at) as date, SUM(total) as total 
+       FROM transactions 
+       WHERE created_at >= ? AND status = ?
+       GROUP BY DATE(created_at)
+       ORDER BY date ASC`,
+      [startDate, TransactionStatus.COMPLETED],
+    );
 
-    return sales.map(s => ({
-      week: s.week,
-      total: parseFloat(s.total) || 0
+    return results.map((item) => ({
+      date: item.date,
+      total: parseFloat(item.total) || 0,
     }));
   }
 
@@ -285,20 +319,23 @@ export class TransactionsService {
 
     const sales = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .select('DATE(transaction.created_at)', 'date') // <-- PERBAIKAN: created_at
+      .select('DATE(transaction.created_at)', 'date')
       .addSelect('COUNT(transaction.id)', 'count')
       .addSelect('SUM(transaction.total)', 'total')
       .where('transaction.created_at BETWEEN :start AND :end', {
-        // <-- PERBAIKAN: created_at
         start: startDate,
         end: endDate,
       })
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .groupBy('DATE(transaction.created_at)') // <-- PERBAIKAN: created_at
+      .groupBy('DATE(transaction.created_at)')
       .orderBy('date', 'ASC')
-      .getRawMany();
+      .getRawMany<{ date: string; count: string; total: string }>();
 
-    return sales;
+    return sales.map((s) => ({
+      date: s.date,
+      count: parseInt(s.count) || 0,
+      total: parseFloat(s.total) || 0,
+    }));
   }
 
   async getPaymentMethods() {
@@ -309,17 +346,17 @@ export class TransactionsService {
       .addSelect('SUM(transaction.total)', 'total')
       .where('transaction.status = :status', { status: TransactionStatus.COMPLETED })
       .groupBy('transaction.paymentMethod')
-      .getRawMany();
+      .getRawMany<{ method: string; count: string; total: string }>();
 
     return methods;
   }
 
   // Buat transaksi baru (HANYA RESERVASI, TIDAK KURANGI STOK)
-  async create(createTransactionDto: CreateTransactionDto, userId?: string) {
+  async create(createTransactionDto: CreateTransactionDto, userId?: string): Promise<Transaction> {
     console.log('=== CREATE TRANSACTION START ===');
     console.log('DTO:', JSON.stringify(createTransactionDto, null, 2));
 
-      const {
+    const {
       items,
       customerName,
       customerPhone,
@@ -431,7 +468,7 @@ export class TransactionsService {
 
       transaction.notes = notes || null;
       // CASH OFFLINE (Kasir) -> tidak ada expiry. Lainnya -> ada expiry.
-      transaction.expiresAt = (orderType === 'OFFLINE') ? null : expiresAt;
+      transaction.expiresAt = orderType === 'OFFLINE' ? null : expiresAt;
 
       console.log('Saving transaction...');
       const savedTransaction = await queryRunner.manager.save(transaction);
@@ -465,36 +502,38 @@ export class TransactionsService {
 
         for (const item of validatedItems) {
           for (const allocation of item.allocations) {
-            // Kurangi stok menggunakan atomic update
-            const updateResult = await queryRunner.manager.query(
+            const updateResultRaw = await queryRunner.manager.query<MySqlResult | MySqlResult[]>(
               `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
               [allocation.quantity, allocation.stock.id, allocation.quantity],
             );
 
             // Cek apakah update berhasil (stok mencukupi secara atomik)
-            const affectedRows = updateResult.affectedRows || updateResult[0]?.affectedRows || 0;
+            const updateResult = Array.isArray(updateResultRaw)
+              ? updateResultRaw[0]
+              : updateResultRaw;
+            const affectedRows = updateResult?.affectedRows ?? 0;
             if (affectedRows === 0) {
               throw new BadRequestException(
                 `Stok produk ${item.product.name} di batch ${allocation.stock.batchCode} tidak cukup atau sudah berubah.`,
               );
             }
 
-            // Ambil data stok terbaru SESUDAH update untuk inventory log yang akurat
-            const updatedStockResult = await queryRunner.manager.query(
+            const updatedStockResult = await queryRunner.manager.query<{ quantity: number }[]>(
               `SELECT quantity FROM stocks WHERE id = ?`,
-              [allocation.stock.id]
+              [allocation.stock.id],
             );
-            const stockAfter = updatedStockResult[0]?.quantity ?? 0;
+            const stockRecord = updatedStockResult[0];
+            const stockAfter = stockRecord?.quantity ?? 0;
             const stockBefore = stockAfter + allocation.quantity;
 
             // Catat ke inventory
-            const inventoryId = uuidv4(); 
+            const inventoryId = uuidv4();
             await queryRunner.manager.query(
               `INSERT INTO inventory (
-              id, product_id, type, quantity, stock_before, stock_after, 
-              batch_code, expiry_date, purchase_price, selling_price, 
-              user_id, notes, reference_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                id, product_id, type, quantity, stock_before, stock_after, 
+                batch_code, expiry_date, purchase_price, selling_price, 
+                user_id, notes, reference_id, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
               [
                 inventoryId,
                 item.product.id,
@@ -545,8 +584,8 @@ export class TransactionsService {
 
     try {
       // 1. Cek apakah transaksi ada dan status PENDING atau PROCESSING
-      const transactions = await queryRunner.manager.query(
-        `SELECT * FROM transactions WHERE id = ? AND status IN (?, ?)`,
+      const transactions = await queryRunner.manager.query<RawTransaction[]>(
+        `SELECT id, invoice_number, status, customer_id, total FROM transactions WHERE id = ? AND status IN (?, ?)`,
         [transactionId, 'PENDING', 'PROCESSING'],
       );
 
@@ -558,7 +597,7 @@ export class TransactionsService {
       console.log('Transaction found:', transaction.invoice_number);
 
       // 2. Ambil semua reservasi aktif
-      const reservations = await queryRunner.manager.query(
+      const reservations = await queryRunner.manager.query<RawReservation[]>(
         `SELECT r.*, s.quantity as stock_quantity, s.batch_code, s.expiry_date, 
               s.purchase_price, s.selling_price, p.name as product_name
        FROM reservations r
@@ -571,7 +610,9 @@ export class TransactionsService {
       console.log(`Found ${reservations.length} reservations`);
 
       if (reservations.length === 0) {
-        throw new BadRequestException('Tidak ada reservasi aktif ditemukan untuk transaksi ini. Mungkin pesanan sudah kadaluarsa atau dibatalkan.');
+        throw new BadRequestException(
+          'Tidak ada reservasi aktif ditemukan untuk transaksi ini. Mungkin pesanan sudah kadaluarsa atau dibatalkan.',
+        );
       }
 
       // 3. KURANGI STOK dan UPDATE RESERVASI untuk setiap item
@@ -584,16 +625,18 @@ export class TransactionsService {
         }
 
         // Update stok - kurangi quantity
-        const updateResult = await queryRunner.manager.query(
+        const updateResultRaw = await queryRunner.manager.query<MySqlResult | MySqlResult[]>(
           `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
           [res.quantity, res.stock_id, res.quantity],
         );
 
-        // Di MySQL, affectedRows ada di result[0]?.affectedRows atau result.affectedRows
-        const affectedRows = updateResult.affectedRows || updateResult[0]?.affectedRows || 0;
+        const updateResult = Array.isArray(updateResultRaw) ? updateResultRaw[0] : updateResultRaw;
+        const affectedRows = updateResult?.affectedRows ?? 0;
 
         if (affectedRows === 0) {
-          throw new BadRequestException(`Gagal mengurangi stok ${res.product_name}. Stok di batch ini mungkin tidak cukup.`);
+          throw new BadRequestException(
+            `Gagal mengurangi stok ${res.product_name}. Stok di batch ini mungkin tidak cukup.`,
+          );
         }
 
         // Update status reservasi menjadi CONFIRMED
@@ -663,7 +706,13 @@ export class TransactionsService {
 
     const transaction = await this.findOne(transactionId);
 
-    if (![TransactionStatus.PENDING, TransactionStatus.PROCESSING, TransactionStatus.COMPLETED].includes(transaction.status)) {
+    if (
+      ![
+        TransactionStatus.PENDING,
+        TransactionStatus.PROCESSING,
+        TransactionStatus.COMPLETED,
+      ].includes(transaction.status)
+    ) {
       throw new BadRequestException('Transaksi tidak dapat dibatalkan');
     }
 
@@ -675,7 +724,7 @@ export class TransactionsService {
       // Jika transaksi sudah COMPLETED, kita harus mengembalikan stok secara eksplisit
       if (transaction.status === TransactionStatus.COMPLETED) {
         console.log('Returning stock for COMPLETED transaction...');
-        
+
         // Ambil items dengan detail stok
         const items = await queryRunner.manager.find(TransactionItem, {
           where: { transactionId: transaction.id },
@@ -687,13 +736,13 @@ export class TransactionsService {
             // Update quantity di tabel stocks
             await queryRunner.manager.query(
               `UPDATE stocks SET quantity = quantity + ? WHERE id = ?`,
-              [item.quantity, item.stockId]
+              [item.quantity, item.stockId],
             );
 
             // Ambil info stok terbaru untuk log inventory
             const currentStock = await queryRunner.manager.query(
               `SELECT * FROM stocks WHERE id = ?`,
-              [item.stockId]
+              [item.stockId],
             );
 
             const stock = currentStock[0];
@@ -713,14 +762,14 @@ export class TransactionsService {
                 item.quantity,
                 stock.quantity - item.quantity,
                 stock.quantity,
-                stock.batch_code,
-                stock.expiry_date,
-                stock.purchase_price,
-                stock.selling_price,
+                stock.batchCode,
+                stock.expiryDate,
+                stock.purchasePrice,
+                stock.sellingPrice,
                 null, // Untuk saat ini null, atau bisa dioper dari controller
                 `VOID Transaksi ${transaction.invoiceNumber}`,
                 transaction.id,
-              ]
+              ],
             );
           }
         }
@@ -961,27 +1010,19 @@ export class TransactionsService {
   private async updateCustomerStats(customerId: string) {
     console.log(`Updating stats for customer: ${customerId}`);
     try {
-      // Hitung total transaksi dan total belanja yang COMPLETED
-      const stats = await this.transactionRepository
-        .createQueryBuilder('t')
-        .select('COUNT(t.id)', 'count')
-        .addSelect('SUM(t.total)', 'total')
-        .where('t.customer_id = :customerId', { customerId })
-        .andWhere('t.status = :status', { status: TransactionStatus.COMPLETED })
-        .getRawOne();
+      const results = await this.transactionRepository.query<{ count: string; total: string }[]>(
+        `SELECT COUNT(*) as count, SUM(total) as total 
+         FROM transactions 
+         WHERE customer_id = ? AND status = ?`,
+        [customerId, TransactionStatus.COMPLETED],
+      );
 
-      console.log(`[DEBUG] Raw Stats for Customer ${customerId}:`, stats);
-
-      const totalTransactions = parseInt(stats?.count) || 0;
-      const totalSpent = parseFloat(stats?.total) || 0;
-
-      console.log(`[DEBUG] Parsed Stats -> Count: ${totalTransactions}, Spent: ${totalSpent}`);
-
-      await this.customerRepository.update(customerId, {
-        totalTransactions,
-        totalSpent,
-      });
-
+      if (results.length > 0) {
+        await this.customerRepository.update(customerId, {
+          totalTransactions: parseInt(results[0].count),
+          totalSpent: parseFloat(results[0].total) || 0,
+        });
+      }
       console.log('Customer stats updated successfully');
     } catch (error) {
       console.error('Error updating customer stats:', error);
@@ -1006,22 +1047,25 @@ export class TransactionsService {
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    const result = await this.transactionRepository
-      .createQueryBuilder('transaction')
-      .select('COUNT(transaction.id)', 'count')
-      .addSelect('SUM(transaction.total)', 'total')
-      .addSelect('SUM(transaction.paymentAmount)', 'payment')
-      .addSelect('AVG(transaction.total)', 'average')
-      .where('transaction.createdAt BETWEEN :start AND :end', { start: startOfDay, end: endOfDay })
-      .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
-      .getRawOne();
+    const results = await this.transactionRepository.query<
+      { count: string; total: string; payment: string; average: string }[]
+    >(
+      `SELECT 
+        COUNT(*) as count, 
+        SUM(total) as total,
+        SUM(payment_amount) as payment,
+        AVG(total) as average
+       FROM transactions 
+       WHERE DATE(created_at) = CURRENT_DATE() AND status = ?`,
+      [TransactionStatus.COMPLETED],
+    );
 
     return {
       date: new Date().toISOString().split('T')[0],
-      count: parseInt(result.count) || 0,
-      total: parseFloat(result.total) || 0,
-      payment: parseFloat(result.payment) || 0,
-      average: parseFloat(result.average) || 0,
+      count: parseInt(results[0].count) || 0,
+      total: parseFloat(results[0].total) || 0,
+      payment: parseFloat(results[0].payment) || 0,
+      average: parseFloat(results[0].average) || 0,
     };
   }
 
@@ -1040,16 +1084,23 @@ export class TransactionsService {
 
     try {
       for (const item of transaction.items) {
-        await queryRunner.manager.query(
-          `UPDATE stocks SET quantity = quantity + ? WHERE id = ?`,
-          [item.quantity, item.stockId],
-        );
+        await queryRunner.manager.query(`UPDATE stocks SET quantity = quantity + ? WHERE id = ?`, [
+          item.quantity,
+          item.stockId,
+        ]);
 
-        const updatedStockResult = await queryRunner.manager.query(
+        const updatedStockResult = await queryRunner.manager.query<
+          {
+            quantity: number;
+            batch_code: string;
+            expiry_date: string;
+            purchase_price: number;
+            selling_price: number;
+          }[]
+        >(
           `SELECT quantity, batch_code, expiry_date, purchase_price, selling_price FROM stocks WHERE id = ?`,
-          [item.stockId]
+          [item.stockId],
         );
-        
         const stockRecord = updatedStockResult[0];
         const stockAfter = stockRecord?.quantity ?? 0;
         const stockBefore = stockAfter - item.quantity;
@@ -1074,8 +1125,8 @@ export class TransactionsService {
             stockRecord?.selling_price || 0,
             userId || null,
             `RETUR: ${reason} (Inv: ${transaction.invoiceNumber})`,
-            transaction.id
-          ]
+            transaction.id,
+          ],
         );
       }
 
@@ -1085,14 +1136,14 @@ export class TransactionsService {
         : `RETURNED: ${reason}`;
 
       await queryRunner.manager.save(transaction);
-    await queryRunner.commitTransaction();
+      await queryRunner.commitTransaction();
 
-    // Update Customer Stats
-    if (transaction.customerId) {
-      await this.updateCustomerStats(transaction.customerId);
-    }
+      // Update Customer Stats
+      if (transaction.customerId) {
+        await this.updateCustomerStats(transaction.customerId);
+      }
 
-    return { message: 'Barang berhasil diretur, stok telah dikembalikan', transaction };
+      return { message: 'Barang berhasil diretur, stok telah dikembalikan', transaction };
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
