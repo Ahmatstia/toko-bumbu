@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThan } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import {
   Transaction,
   TransactionStatus,
@@ -11,11 +11,12 @@ import { TransactionItem } from './entities/transaction-item.entity';
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
 import { Product } from '../products/entities/product.entity';
 import { Stock } from '../inventory/entities/stock.entity';
-import { Inventory, InventoryType } from '../inventory/entities/inventory.entity';
+import { Inventory } from '../inventory/entities/inventory.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { subDays } from 'date-fns';
+import { Customer } from '../customers/entities/customer.entity';
 
 @Injectable()
 export class TransactionsService {
@@ -32,6 +33,8 @@ export class TransactionsService {
     private stockRepository: Repository<Stock>,
     @InjectRepository(Inventory)
     private inventoryRepository: Repository<Inventory>,
+    @InjectRepository(Customer)
+    private customerRepository: Repository<Customer>,
     private dataSource: DataSource,
   ) {}
 
@@ -494,6 +497,11 @@ export class TransactionsService {
       await queryRunner.commitTransaction();
       console.log('Transaction committed successfully');
 
+      // Update Customer Stats if it's an OFFLINE order (immediately completed)
+      if (orderType === 'OFFLINE' && customerId) {
+        await this.updateCustomerStats(customerId);
+      }
+
       const result = await this.findOne(savedTransaction.id);
       console.log('=== CREATE TRANSACTION SUCCESS ===');
       return result;
@@ -611,6 +619,11 @@ export class TransactionsService {
       await queryRunner.commitTransaction();
       console.log('✅ SUCCESS');
 
+      // Update Customer Stats
+      if (transaction.customer_id) {
+        await this.updateCustomerStats(transaction.customer_id);
+      }
+
       // Kembalikan data transaksi terbaru
       return this.findOne(transactionId);
     } catch (error) {
@@ -714,6 +727,11 @@ export class TransactionsService {
 
       await queryRunner.commitTransaction();
       console.log('=== CANCEL TRANSACTION SUCCESS ===');
+
+      // Update Customer Stats if it was a completed transaction
+      if (transaction.status === TransactionStatus.CANCELLED && transaction.customerId) {
+        await this.updateCustomerStats(transaction.customerId);
+      }
 
       return {
         message: 'Transaksi dibatalkan, stok tersedia kembali',
@@ -918,6 +936,36 @@ export class TransactionsService {
     };
   }
 
+  // UPDATE Statistik Customer (Counter)
+  private async updateCustomerStats(customerId: string) {
+    console.log(`Updating stats for customer: ${customerId}`);
+    try {
+      // Hitung total transaksi dan total belanja yang COMPLETED
+      const stats = await this.transactionRepository
+        .createQueryBuilder('t')
+        .select('COUNT(t.id)', 'count')
+        .addSelect('SUM(t.total)', 'total')
+        .where('t.customer_id = :customerId', { customerId })
+        .andWhere('t.status = :status', { status: TransactionStatus.COMPLETED })
+        .getRawOne();
+
+      console.log(`[DEBUG] Raw Stats for Customer ${customerId}:`, stats);
+
+      const totalTransactions = parseInt(stats?.count) || 0;
+      const totalSpent = parseFloat(stats?.total) || 0;
+
+      console.log(`[DEBUG] Parsed Stats -> Count: ${totalTransactions}, Spent: ${totalSpent}`);
+
+      await this.customerRepository.update(customerId, {
+        totalTransactions,
+        totalSpent,
+      });
+
+      console.log('Customer stats updated successfully');
+    } catch (error) {
+      console.error('Error updating customer stats:', error);
+    }
+  }
   // Dapatkan transaksi customer
   async findByCustomer(customerId: string) {
     const transactions = await this.transactionRepository.find({
@@ -1024,5 +1072,29 @@ export class TransactionsService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  // SYNC Semua Statistik Customer (Fix historis)
+  async syncAllCustomerStats() {
+    console.log('=== SYNC ALL CUSTOMER STATS START ===');
+    const customers = await this.customerRepository.find({ select: ['id', 'name'] });
+    console.log(`Found ${customers.length} customers to sync`);
+
+    let successCount = 0;
+    for (const customer of customers) {
+      try {
+        await this.updateCustomerStats(customer.id);
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to sync customer ${customer.id}:`, err);
+      }
+    }
+
+    console.log(`=== SYNC ALL CUSTOMER STATS END: ${successCount}/${customers.length} Success ===`);
+    return {
+      message: 'Sinkronisasi statistik selesai',
+      total: customers.length,
+      success: successCount,
+    };
   }
 }

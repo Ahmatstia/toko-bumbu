@@ -195,4 +195,11 @@ export class TransactionsController {
   async processExpired() {
     return this.transactionsService.processExpiredReservations();
   }
+
+  @Post('sync-all-stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.MANAGER)
+  async syncAllStats() {
+    return await this.transactionsService.syncAllCustomerStats();
+  }
 }

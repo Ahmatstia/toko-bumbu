@@ -7,6 +7,7 @@ import {
   UserIcon,
   PhoneIcon,
   CalendarIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import { formatPrice } from "../../utils/format";
@@ -147,13 +148,34 @@ const Customers: React.FC = () => {
           </h1>
           <p className="text-gray-600 mt-1">Kelola data pelanggan</p>
         </div>
-        {/* Total Data Badge */}
-        {totalData > 0 && (
-          <div className="bg-primary-50 border-2 border-primary-200 rounded-xl px-4 py-2">
-            <p className="text-sm text-gray-600">Total Customer</p>
-            <p className="text-2xl font-bold text-primary-600">{totalData}</p>
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={async () => {
+              try {
+                const res = await api.post("/transactions/sync-all-stats");
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const toast = (await import("react-hot-toast")).default;
+                toast.success(`Berhasil sinkronisasi ${res.data.success} customer!`);
+                refetch();
+              } catch (err) {
+                console.error(err);
+                const toast = (await import("react-hot-toast")).default;
+                toast.error("Gagal sinkronisasi statistik");
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 text-gray-700 font-medium transition-all shadow-sm"
+          >
+            <ArrowPathIcon className="h-5 w-5 text-gray-500" />
+            Sync Data Historis
+          </button>
+          {/* Total Data Badge */}
+          {totalData > 0 && (
+            <div className="bg-primary-50 border-2 border-primary-200 rounded-xl px-4 py-2">
+              <p className="text-sm text-gray-600">Total Customer</p>
+              <p className="text-2xl font-bold text-primary-600">{totalData}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
