@@ -7,13 +7,10 @@ import {
   CubeIcon,
   UserGroupIcon,
   ArrowTrendingUpIcon,
-  BellIcon,
   ArrowPathIcon,
   DocumentTextIcon,
   PlusIcon,
   EyeIcon,
-  ExclamationTriangleIcon,
-  ClockIcon,
 } from "@heroicons/react/24/outline";
 import {
   AreaChart,
@@ -89,6 +86,7 @@ interface DashboardStats {
     totalProducts: number;
     totalCustomers: number;
     totalTransactions: number;
+    totalSales: number;
     totalRevenue: number;
     pendingTransactions: number;
   };
@@ -114,7 +112,6 @@ const STATUS_COLORS: Record<string, string> = {
 // ========== MAIN COMPONENT ==========
 const Dashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState<"week" | "month">("week");
-  const [showNotifications, setShowNotifications] = useState(false);
   const [greeting, setGreeting] = useState("");
 
   // Greeting based on time
@@ -131,49 +128,10 @@ const Dashboard: React.FC = () => {
     isLoading,
     refetch,
   } = useQuery<DashboardStats>({
-    queryKey: ["admin-dashboard", timeRange],
+    queryKey: ["admin-dashboard"],
     queryFn: async () => {
-      const [
-        todaySalesRes,
-        weeklySalesRes,
-        monthlySalesRes,
-        topProductsRes,
-        recentTransactionsRes,
-        paymentMethodsRes,
-        summaryRes,
-        lowStockRes,
-        expiringSoonRes,
-      ] = await Promise.all([
-        api.get("/transactions/today").catch(() => ({ data: { total: 0, count: 0, average: 0 } })),
-        api.get("/transactions/weekly").catch(() => ({ data: [] })),
-        api.get("/transactions/monthly").catch(() => ({ data: [] })),
-        api.get("/products/top?limit=5").catch(() => ({ data: [] })),
-        api.get("/transactions?limit=7").catch(() => ({ data: { data: [] } })),
-        api.get("/transactions/payment-methods").catch(() => ({ data: [] })),
-        api.get("/admin/summary").catch(() => ({
-          data: {
-            totalProducts: 0,
-            totalCustomers: 0,
-            totalTransactions: 0,
-            totalRevenue: 0,
-            pendingTransactions: 0,
-          },
-        })),
-        api.get("/inventory/stock/low").catch(() => ({ data: [] })),
-        api.get("/inventory/stock/expiring").catch(() => ({ data: [] })),
-      ]);
-
-      return {
-        todaySales: todaySalesRes.data,
-        weeklySales: weeklySalesRes.data,
-        monthlySales: monthlySalesRes.data,
-        topProducts: topProductsRes.data,
-        lowStock: lowStockRes.data,
-        expiringSoon: expiringSoonRes.data,
-        recentTransactions: recentTransactionsRes.data.data || [],
-        paymentMethods: paymentMethodsRes.data,
-        summary: summaryRes.data,
-      };
+      const response = await api.get("/admin/dashboard-stats");
+      return response.data;
     },
     refetchInterval: 60000,
   });
@@ -224,298 +182,224 @@ const Dashboard: React.FC = () => {
   const salesData = (timeRange === "week" ? stats?.weeklySales : stats?.monthlySales) || [];
   const paymentData = stats?.paymentMethods || [];
 
-  const notifications = [
-    ...(stats?.lowStock?.map((item) => ({
-      type: "warning",
-      title: "Stok Menipis",
-      message: `${item.name || item.product?.name} tersisa ${item.quantity} ${item.product?.unit} (min ${item.product?.minStock})`,
-      time: "Segera Restock",
-      link: `/admin/inventory`,
-      icon: <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" />,
-    })) || []),
-    ...(stats?.expiringSoon?.map((item) => {
-      const days = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-      return {
-        type: "expiring",
-        title: "Akan Kadaluarsa",
-        message: `${item.product?.name} (${item.batchCode}) kadaluarsa dalam ${days} hari`,
-        time: `${days} hari lagi`,
-        link: `/admin/inventory`,
-        icon: <ClockIcon className="h-5 w-5 text-rose-500" />,
-      };
-    }) || []),
-  ];
+
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* ========== HERO HEADER ========== */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-sky-600 to-indigo-700 rounded-3xl p-8 text-white shadow-xl shadow-sky-100">
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-              {greeting}, Owner! 👋
-            </h1>
-            <p className="text-sky-100 mt-2 text-lg font-medium opacity-90">
-              Berikut adalah laporan terbaru untuk toko bumbu Anda hari ini.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all relative border border-white/20"
-              >
-                <BellIcon className="h-6 w-6" />
-                {notifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center border-2 border-indigo-700 animate-bounce">
-                    {notifications.length}
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div className="absolute right-0 mt-4 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden ring-1 ring-black/5 animate-in fade-in slide-in-from-top-2">
-                  <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-900">Notifikasi Logistik</h3>
-                    <span className="text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-1 rounded-full uppercase">
-                      {notifications.length} Info
-                    </span>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {notifications.length > 0 ? (
-                      notifications.map((notif, idx) => (
-                        <Link
-                          key={idx}
-                          to={notif.link}
-                          className="flex items-start gap-4 p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
-                          onClick={() => setShowNotifications(false)}
-                        >
-                          <div className="mt-1">{notif.icon}</div>
-                          <div>
-                            <p className="font-bold text-gray-800 text-sm leading-tight">{notif.title}</p>
-                            <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notif.message}</p>
-                            <p className="text-[10px] text-sky-600 font-bold mt-2 flex items-center gap-1 uppercase tracking-wider">
-                              <ArrowTrendingUpIcon className="h-3 w-3" />
-                              {notif.time}
-                            </p>
-                          </div>
-                        </Link>
-                      ))
-                    ) : (
-                      <div className="p-8 text-center">
-                        <CubeIcon className="h-12 w-12 text-gray-200 mx-auto mb-3" />
-                        <p className="text-gray-400 text-sm italic">Logistik terpantau aman terkendali</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
+    <div className="space-y-10 pb-16 px-4 md:px-8 max-w-[1600px] mx-auto">
+      {/* ========== MINIMALIST HERO HEADER ========== */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 pt-6">
+        <div>
+          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+            {greeting}, Owner <span className="animate-bounce">👋</span>
+          </h1>
+          <p className="text-slate-500 mt-2 text-lg font-medium max-w-2xl">
+            Pantau performa bisnis bumbu Anda secara real-time dari satu dashboard terpadu.
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-sm">
             <button
-              onClick={() => refetch()}
-              className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/20 active:scale-95"
+              onClick={() => setTimeRange("week")}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === "week"
+                  ? "bg-white text-sky-600 shadow-md shadow-sky-100"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
             >
-              <ArrowPathIcon className="h-6 w-6" />
+              7 HARI
+            </button>
+            <button
+              onClick={() => setTimeRange("month")}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === "month"
+                  ? "bg-white text-sky-600 shadow-md shadow-sky-100"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              BULANAN
             </button>
           </div>
+          
+          <button
+            onClick={() => refetch()}
+            className="p-3 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-2xl shadow-sm transition-all active:scale-95 group"
+            title="Refresh Data"
+          >
+            <ArrowPathIcon className="h-6 w-6 group-hover:rotate-180 transition-transform duration-500" />
+          </button>
         </div>
-        
-        {/* Decorative elements */}
-        <div className="absolute -bottom-12 -right-12 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
-        <div className="absolute top-0 left-0 w-32 h-32 bg-sky-400/20 rounded-full blur-2xl"></div>
       </div>
 
-      {/* ========== MAIN STATS GRID ========== */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* ========== SMART STATS CARDS ========== */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
         {/* Card 1: Omzet Hari Ini */}
-        <div className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300">
+        <div className="relative group bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 hover:border-sky-200 hover:shadow-2xl hover:shadow-sky-500/5 transition-all duration-500">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Penjualan Hari Ini</p>
-              <h3 className="text-2xl font-black text-gray-900 mt-2 tracking-tight">
+              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.15em] mb-2">Penjualan Hari Ini</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {formatPrice(stats?.todaySales.total)}
               </h3>
             </div>
-            <div className="bg-emerald-50 text-emerald-600 rounded-2xl p-3 group-hover:scale-110 transition-transform">
-              <CurrencyDollarIcon className="h-6 w-6" />
+            <div className="bg-sky-50 text-sky-600 rounded-2xl p-4 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6">
+              <CurrencyDollarIcon className="h-7 w-7" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-black">
+          <div className="mt-6 flex items-center gap-3">
+            <span className="bg-sky-500 text-white text-[11px] px-2.5 py-1 rounded-lg font-black shadow-lg shadow-sky-200">
               {stats?.todaySales.count || 0} TRX
             </span>
-            <p className="text-xs text-gray-400 font-medium whitespace-nowrap">
-              Avg: {formatPrice(stats?.todaySales.average)}
+            <p className="text-xs text-slate-500 font-bold">
+              Avg: <span className="text-slate-900">{formatPrice(stats?.todaySales.average)}</span>
             </p>
           </div>
         </div>
 
         {/* Card 2: Katalog Produk */}
-        <div className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:shadow-sky-500/10 transition-all duration-300">
+        <div className="relative group bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 hover:border-indigo-200 hover:shadow-2xl hover:shadow-indigo-500/5 transition-all duration-500">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Katalog Produk</p>
-              <h3 className="text-2xl font-black text-gray-900 mt-2 tracking-tight">
+              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.15em] mb-2">Katalog Produk</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {stats?.summary.totalProducts || 0}
               </h3>
             </div>
-            <div className="bg-sky-50 text-sky-600 rounded-2xl p-3 group-hover:scale-110 transition-transform">
-              <CubeIcon className="h-6 w-6" />
+            <div className="bg-indigo-50 text-indigo-600 rounded-2xl p-4 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-6">
+              <CubeIcon className="h-7 w-7" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${stats?.lowStock?.length ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'}`}>
-              {stats?.lowStock?.length || 0} Stok Limit
+          <div className="mt-6 flex items-center gap-3">
+            <span className={`text-[11px] px-2.5 py-1 rounded-lg font-black ${stats?.lowStock?.length ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-slate-900 text-white shadow-lg shadow-slate-200'}`}>
+              {stats?.lowStock?.length || 0} STOK KRITIS
             </span>
-            <p className="text-xs text-gray-400 font-medium">Monitoring aktif</p>
+            <p className="text-xs text-slate-500 font-bold tracking-tight">Monitoring Inventaris</p>
           </div>
         </div>
 
-        {/* Card 3: Pelanggan Setia */}
-        <div className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300">
+        {/* Card 3: New Entities (Customers) */}
+        <div className="relative group bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 hover:border-emerald-200 hover:shadow-2xl hover:shadow-emerald-500/5 transition-all duration-500">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Total Pelanggan</p>
-              <h3 className="text-2xl font-black text-gray-900 mt-2 tracking-tight">
+              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.15em] mb-2">Total Pelanggan</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {stats?.summary.totalCustomers || 0}
               </h3>
             </div>
-            <div className="bg-indigo-50 text-indigo-600 rounded-2xl p-3 group-hover:scale-110 transition-transform">
-              <UserGroupIcon className="h-6 w-6" />
+            <div className="bg-emerald-50 text-emerald-600 rounded-2xl p-4 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6">
+              <UserGroupIcon className="h-7 w-7" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-black">
-              TRUSTED BRAND
+          <div className="mt-6 flex items-center gap-3">
+            <span className="bg-emerald-500 text-white text-[11px] px-2.5 py-1 rounded-lg font-black shadow-lg shadow-emerald-200">
+              LOYAL GROUP
             </span>
-            <p className="text-xs text-gray-400 font-medium">Customer database</p>
+            <p className="text-xs text-slate-500 font-bold">Database Aktif</p>
           </div>
         </div>
 
-        {/* Card 4: Total Omzet */}
-        <div className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300">
+        {/* Card 4: Total Revenue (VALIDATED) */}
+        <div className="relative group bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 hover:border-violet-200 hover:shadow-2xl hover:shadow-violet-500/5 transition-all duration-500">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Total Revenue</p>
-              <h3 className="text-2xl font-black text-gray-900 mt-2 tracking-tight">
-                {formatPrice(Number(stats?.summary.totalRevenue))}
+              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.15em] mb-2">Total Omzet</p>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">
+                {formatPrice(Number(stats?.summary.totalSales))}
               </h3>
             </div>
-            <div className="bg-amber-50 text-amber-600 rounded-2xl p-3 group-hover:scale-110 transition-transform">
-              <ArrowTrendingUpIcon className="h-6 w-6" />
+            <div className="bg-violet-50 text-violet-600 rounded-2xl p-4 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-6">
+              <ArrowTrendingUpIcon className="h-7 w-7" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-black">
-              LIFETIME EARNINGS
+          <div className="mt-6 flex items-center gap-3">
+            <span className="bg-violet-500 text-white text-[11px] px-2.5 py-1 rounded-lg font-black shadow-lg shadow-violet-200">
+              VALIDATED DATA
             </span>
-            <p className="text-xs text-gray-400 font-medium">Success transactions</p>
+            <p className="text-xs text-slate-500 font-bold">Berdasarkan Filter</p>
           </div>
         </div>
       </div>
 
-      {/* ========== CHARTS SECTION ========== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Grafik Penjualan */}
-        <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+      {/* ========== ANALYTICS RADAR ========== */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Sales Trend Chart */}
+        <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 group">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10">
             <div>
-              <h2 className="text-xl font-black text-gray-900 tracking-tight">Tren Performa Penjualan</h2>
-              <p className="text-sm text-gray-400 font-medium mt-1">Struktur pemasukan periode terkini</p>
-            </div>
-            <div className="flex bg-gray-100/80 p-1 rounded-2xl ring-1 ring-gray-200/50">
-              <button
-                onClick={() => setTimeRange("week")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  timeRange === "week"
-                    ? "bg-white text-sky-600 shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                7 HARI
-              </button>
-              <button
-                onClick={() => setTimeRange("month")}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  timeRange === "month"
-                    ? "bg-white text-sky-600 shadow-sm ring-1 ring-gray-200"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                BULANAN
-              </button>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Performa Penjualan</h2>
+              <p className="text-sm text-slate-400 font-medium mt-1">Struktur pemasukan periode {timeRange === 'week' ? '7 Hari' : '1 Bulan'} terakhir</p>
             </div>
           </div>
-          <div className="h-[350px] w-full">
+          <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={salesData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <AreaChart data={salesData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.01} />
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
                 <XAxis
                   dataKey={timeRange === "week" ? "date" : "week"}
                   tickFormatter={(value: any) => formatShortDate(String(value))}
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 700 }}
-                  dy={10}
+                  tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }}
+                  dy={15}
                 />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 700 }}
-                  tickFormatter={(value: any) => `Rp ${value/1000}k`}
+                  tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }}
+                  tickFormatter={(value: any) => value >= 1000000 ? `${(value/1000000).toFixed(1)}jt` : `${value/1000}rb`}
                 />
                 <Tooltip
+                  cursor={{ stroke: '#e2e8f0', strokeWidth: 2 }}
                   contentStyle={{
-                    borderRadius: "16px",
+                    borderRadius: "20px",
                     border: "none",
-                    boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
-                    padding: "12px",
+                    boxShadow: "0 25px 50px -12px rgb(0 0 0 / 0.15)",
+                    padding: "16px",
+                    background: "rgba(255, 255, 255, 0.95)",
+                    backdropFilter: "blur(8px)",
                   }}
-                  itemStyle={{ fontWeight: "800", color: "#0ea5e9" }}
-                  labelStyle={{ fontWeight: "800", marginBottom: "4px", color: "#1e293b" }}
-                  formatter={(value: any) => [formatPrice(Number(value)), "Omzet"]}
-                  labelFormatter={(label: any) => `Periode: ${label}`}
+                  itemStyle={{ fontWeight: "900", color: "#0ea5e9", textTransform: "uppercase", fontSize: "12px" }}
+                  labelStyle={{ fontWeight: "900", marginBottom: "8px", color: "#0f172a", fontSize: "14px" }}
+                  formatter={(value: any) => [formatPrice(Number(value))]}
+                  labelFormatter={(label: any) => `Periode: ${formatDate(label).split(',')[0]}`}
                 />
                 <Area
                   type="monotone"
                   dataKey="total"
                   stroke="#0ea5e9"
-                  strokeWidth={4}
+                  strokeWidth={5}
                   fillOpacity={1}
                   fill="url(#colorTotal)"
-                  animationDuration={1500}
+                  animationDuration={2000}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Pie Chart - Metode Pembayaran */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-          <div className="mb-8">
-            <h2 className="text-xl font-black text-gray-900 tracking-tight">Payment Mix</h2>
-            <p className="text-sm text-gray-400 font-medium mt-1">Daftar preferensi berbayar</p>
+        {/* Payment Logic Chart */}
+        <div className="bg-white rounded-[2.5rem] p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80">
+          <div className="mb-10 text-center">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Payment Channel</h2>
+            <p className="text-sm text-slate-400 font-medium mt-1">Preferensi pelanggan</p>
           </div>
           {paymentData.length > 0 ? (
             <div className="flex flex-col items-center">
-              <div className="h-[220px] w-full">
+              <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={paymentData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={65}
-                      outerRadius={85}
-                      fill="#8884d8"
-                      paddingAngle={8}
+                      innerRadius={75}
+                      outerRadius={100}
+                      paddingAngle={10}
                       dataKey="count"
                       stroke="none"
                     >
@@ -524,237 +408,186 @@ const Dashboard: React.FC = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                       contentStyle={{
+                      contentStyle={{
                         borderRadius: "16px",
                         border: "none",
                         boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)",
-                        padding: "10px",
                       }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="w-full mt-6 space-y-3">
+              <div className="w-full mt-10 grid grid-cols-1 gap-3">
                 {paymentData.map((item, index) => (
-                  <div key={item.method} className="flex justify-between items-center bg-gray-50/50 p-2 px-3 rounded-xl border border-gray-100/50">
-                    <div className="flex items-center gap-3">
+                  <div key={item.method} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 transition-all hover:bg-slate-100/50">
+                    <div className="flex items-center gap-4">
                       <div
-                        className="w-3 h-3 rounded-full ring-4 ring-white"
+                        className="w-4 h-4 rounded-full shadow-[0_0_10px_rgba(0,0,0,0.1)]"
                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
                       ></div>
-                      <span className="text-xs font-extrabold text-gray-600 uppercase tracking-tighter">
+                      <span className="text-sm font-black text-slate-600 uppercase tracking-tighter">
                         {item.method}
                       </span>
                     </div>
-                    <span className="text-xs font-black text-gray-900">{item.count}x</span>
+                    <span className="text-sm font-black text-slate-900">{item.count} TRX</span>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="h-[300px] flex flex-col items-center justify-center text-center">
-              <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mb-4">
-                <CurrencyDollarIcon className="h-8 w-8 text-gray-200" />
-              </div>
-              <p className="text-gray-400 text-sm italic font-medium">Data pembayaran nihil</p>
+            <div className="h-full flex flex-col items-center justify-center py-20">
+              <p className="text-slate-300 font-black italic">No Payment Data</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* ========== LISTS SECTION (REDESIGNED) ========== */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {/* Top Products */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-8 pb-4 flex justify-between items-center">
+      {/* ========== OPERATIONAL GRID ========== */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
+        {/* Top Products Refined */}
+        <div className="bg-white rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 overflow-hidden">
+          <div className="p-10 pb-6 flex justify-between items-baseline">
             <div>
-              <h2 className="text-xl font-black text-gray-900 tracking-tight text-glow">Produk Juara 🏆</h2>
-              <p className="text-sm text-gray-400 font-medium">Berdasarkan volume penjualan</p>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Best Sellers 🌟</h2>
+              <p className="text-sm text-slate-400 font-medium">Top 5 produk berdasarkan volume</p>
             </div>
-            <Link to="/admin/products" className="text-sky-600 hover:text-sky-700 text-xs font-black bg-sky-50 px-4 py-2 rounded-xl transition-all">
-              FULL LIST
+            <Link to="/admin/products" className="text-sky-600 text-xs font-black uppercase tracking-widest hover:underline">
+              View All
             </Link>
           </div>
-          <div className="p-4 space-y-2">
+          <div className="px-10 pb-10 space-y-3">
             {stats?.topProducts && stats.topProducts.length > 0 ? (
               stats.topProducts.map((product, index) => (
-                <div key={product.id} className="flex items-center gap-4 p-4 hover:bg-sky-50/30 rounded-2xl transition-all group">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ring-1 ring-inset ${
-                    index === 0 ? 'bg-amber-100 text-amber-700 ring-amber-200/50' : 
-                    index === 1 ? 'bg-slate-100 text-slate-700 ring-slate-200/50' :
-                    index === 2 ? 'bg-orange-100 text-orange-700 ring-orange-200/50' : 'bg-gray-50 text-gray-500 ring-gray-100'
-                  }`}>
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-900 truncate group-hover:text-sky-700 transition-colors">{product.name}</p>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">
-                      STOCK FLOW: {product.sold} UNITS
-                    </p>
+                <div key={product.id} className="group flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-slate-100/50 transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-200/50">
+                  <div className="flex items-center gap-5">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${
+                      index === 0 ? 'bg-amber-100 text-amber-600' : 
+                      index === 1 ? 'bg-slate-200 text-slate-600' :
+                      index === 2 ? 'bg-orange-100 text-orange-600' : 'bg-white text-slate-400'
+                    }`}>
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-slate-800 text-lg tracking-tight group-hover:text-sky-600 transition-colors uppercase">{product.name}</p>
+                      <p className="text-xs font-black text-slate-400 mt-0.5 tracking-widest">{product.sold} UNITS SOLD</p>
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-black text-gray-900">{formatPrice(Number(product.revenue))}</p>
-                    <div className="flex items-center justify-end gap-1 mt-0.5">
-                      <div className="w-8 h-1 bg-sky-100 rounded-full overflow-hidden">
-                        <div className="bg-sky-500 h-full rounded-full" style={{ width: `${Math.min(100, (product.sold / (stats.topProducts?.[0]?.sold || 1)) * 100)}%` }}></div>
-                      </div>
+                    <p className="text-lg font-black text-slate-900">{formatPrice(Number(product.revenue))}</p>
+                    <div className="h-1.5 w-32 bg-slate-200 rounded-full mt-2 overflow-hidden ml-auto">
+                      <div className="h-full bg-sky-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, (product.sold / (stats.topProducts?.[0]?.sold || 1)) * 100)}%` }}></div>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-12">
-                <p className="text-gray-300 font-bold italic">Belum ada pemenang produk</p>
+              <div className="py-20 text-center">
+                <p className="text-slate-300 font-black italic">Belum ada data produk</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Critical Logistics (Stock & Expiry) */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col">
-          <div className="p-8 pb-4">
-            <h2 className="text-xl font-black text-gray-900 tracking-tight">Sinyal Logistik 🏗️</h2>
-            <p className="text-sm text-gray-400 font-medium">Segera ambil tindakan pencegahan</p>
-          </div>
-          
-          <div className="flex-1 p-6 pt-2 space-y-6">
-            {/* Limit Stock Sub-section */}
+        {/* Financial Ledger Placeholder or Status */}
+        <div className="bg-white rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 p-10">
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Sinyal Logistik 🏗️</h2>
+          <p className="text-sm text-slate-400 font-medium mt-1">Status stok & kadaluarsa batch</p>
+          <div className="mt-8 space-y-6">
             <div>
-              <div className="flex items-center gap-2 mb-4 px-2">
-                <ExclamationTriangleIcon className="h-4 w-4 text-rose-500" />
-                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Stok Menipis</h3>
-                <span className="ml-auto text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full ring-1 ring-rose-100">
-                  {stats?.lowStock?.length || 0} ITEMS
-                </span>
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Stok Menipis</span>
+                <span className="text-xs font-black text-rose-500 bg-rose-50 px-3 py-1 rounded-full">{stats?.lowStock?.length || 0} Item</span>
               </div>
               <div className="space-y-2">
-                {stats?.lowStock && stats.lowStock.length > 0 ? (
-                  stats.lowStock.slice(0, 3).map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100/50">
-                      <div>
-                        <p className="font-bold text-gray-800 text-sm">{item.name || item.product?.name}</p>
-                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">SKU: {item.sku || 'N/A'}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-black text-rose-600">{item.quantity} {item.product?.unit}</p>
-                        <p className="text-[10px] text-gray-400 font-bold">LMT: {item.product?.minStock}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-center">
-                    <p className="text-xs font-bold text-emerald-700">✅ Semua stok aman terjaga</p>
+                {stats?.lowStock?.slice(0, 2).map(item => (
+                  <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                    <span className="text-sm font-bold text-slate-700">{item.name}</span>
+                    <span className="text-xs font-black text-rose-600">{item.quantity} Unit</span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
-
-             {/* Expiry Sub-section */}
-             <div>
-              <div className="flex items-center gap-2 mb-4 px-2">
-                <ClockIcon className="h-4 w-4 text-amber-500" />
-                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Akan Kadaluarsa</h3>
-                <span className="ml-auto text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full ring-1 ring-amber-100">
-                  {stats?.expiringSoon?.length || 0} BATCHES
-                </span>
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Akan Kadaluarsa</span>
+                <span className="text-xs font-black text-amber-500 bg-amber-50 px-3 py-1 rounded-full">{stats?.expiringSoon?.length || 0} Batch</span>
               </div>
               <div className="space-y-2">
-                {stats?.expiringSoon && stats.expiringSoon.length > 0 ? (
-                  stats.expiringSoon.slice(0, 3).map((item) => {
-                    const days = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                    return (
-                      <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100/50">
-                        <div>
-                          <p className="font-bold text-gray-800 text-sm">{item.product?.name}</p>
-                          <p className="text-[10px] text-gray-400 font-bold mt-0.5">BATCH: {item.batchCode}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-sm font-black ${days <= 7 ? 'text-rose-600' : 'text-amber-600'}`}>
-                            {days} HARI LAGI
-                          </p>
-                          <p className="text-[10px] text-gray-400 font-bold">{new Date(item.expiryDate).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-center">
-                    <p className="text-xs font-bold text-emerald-700">✅ Tidak ada produk kritis kadaluarsa</p>
+                {stats?.expiringSoon?.slice(0, 2).map(item => (
+                  <div key={item.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                    <span className="text-sm font-bold text-slate-700">{item.product?.name}</span>
+                    <span className="text-xs font-black text-amber-600">{new Date(item.expiryDate).toLocaleDateString()}</span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           </div>
-          
-          <Link to="/admin/inventory" className="m-6 mt-0 p-4 bg-gray-900 text-white rounded-2xl text-center text-xs font-black hover:bg-gray-800 transition-all shadow-lg shadow-gray-200">
+          <Link to="/admin/inventory" className="mt-8 block py-4 bg-slate-900 text-white rounded-2xl text-center text-xs font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">
             KONTROL LOGISTIK PENUH
           </Link>
         </div>
       </div>
 
-      {/* ========== RECENT TRANSACTIONS TABLE (PREMIUM) ========== */}
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* ========== RECENT TRANSACTIONS TABLE (PREMIUM LEDGER) ========== */}
+      <div className="bg-white rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/80 overflow-hidden group">
+        <div className="p-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Ledger Transaksi</h2>
-            <p className="text-sm text-gray-400 font-medium mt-1">Status arus kas waktu nyata</p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Financial Ledger</h2>
+            <p className="text-sm text-slate-400 font-medium mt-1">Status arus kas waktu nyata (Live Update)</p>
           </div>
-          <Link to="/admin/transactions" className="bg-white hover:bg-gray-50 ring-1 ring-gray-200 px-6 py-3 rounded-2xl text-xs font-black text-gray-700 transition-all shadow-sm">
-            ARSIP TRANSAKSI
+          <Link to="/admin/transactions" className="bg-slate-900 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 active:scale-95">
+            Full Transaction History
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50/50 border-y border-gray-100">
-                <th className="text-left py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Invoice</th>
-                <th className="text-left py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Nama Entitas</th>
-                <th className="text-left py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Timestamp</th>
-                <th className="text-right py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Nilai Bersih</th>
-                <th className="text-center py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Metode</th>
-                <th className="text-center py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
-                <th className="text-center py-4 px-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">Detail</th>
+              <tr className="bg-slate-50 border-y border-slate-100/50">
+                <th className="text-left py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Invoice No</th>
+                <th className="text-left py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Entitas Customer</th>
+                <th className="text-left py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Timestamp</th>
+                <th className="text-right py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Nilai Transaksi</th>
+                <th className="text-center py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Metode</th>
+                <th className="text-center py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
+                <th className="text-center py-6 px-10 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-50">
               {stats?.recentTransactions && stats.recentTransactions.length > 0 ? (
                 stats.recentTransactions.map((trx) => (
-                  <tr key={trx.id} className="hover:bg-sky-50/30 transition-colors group">
-                    <td className="py-5 px-8">
-                      <span className="font-mono text-xs font-black text-sky-600 bg-sky-50 px-2 py-1 rounded-lg ring-1 ring-sky-100/50">
+                  <tr key={trx.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-7 px-10">
+                      <span className="font-mono text-xs font-black text-sky-600 bg-sky-50 px-3 py-1.5 rounded-xl border border-sky-100/50">
                         {trx.invoiceNumber}
                       </span>
                     </td>
-                    <td className="py-5 px-8 font-bold text-gray-800 text-sm">{trx.customerName}</td>
-                    <td className="py-5 px-8 text-xs font-bold text-gray-500">{formatDate(trx.createdAt)}</td>
-                    <td className="py-5 px-8 text-right font-black text-gray-900">{formatPrice(Number(trx.total))}</td>
-                    <td className="py-5 px-8 text-center">
-                      <span className="text-[10px] font-black text-gray-500 border border-gray-200 px-3 py-1 rounded-full bg-white">
+                    <td className="py-7 px-10 font-extrabold text-slate-800 text-sm tracking-tight">{trx.customerName}</td>
+                    <td className="py-7 px-10 text-xs font-bold text-slate-500 uppercase tracking-tighter">{formatDate(trx.createdAt)}</td>
+                    <td className="py-7 px-10 text-right font-black text-slate-900 text-base">{formatPrice(Number(trx.total))}</td>
+                    <td className="py-7 px-10 text-center">
+                      <span className="text-[10px] font-black text-slate-500 border border-slate-200 px-4 py-1.5 rounded-full bg-white shadow-sm">
                         {trx.paymentMethod}
                       </span>
                     </td>
-                    <td className="py-5 px-8 text-center">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black border ${STATUS_COLORS[trx.status] || "bg-gray-50 text-gray-400 border-gray-100"}`}>
+                    <td className="py-7 px-10 text-center">
+                      <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black border uppercase tracking-widest ${STATUS_COLORS[trx.status] || "bg-slate-50 text-slate-400 border-slate-100"}`}>
                         {trx.status}
                       </span>
                     </td>
-                    <td className="py-5 px-8 text-center">
+                    <td className="py-7 px-10 text-center">
                       <Link
                         to={`/admin/transactions`}
-                        className="inline-flex items-center justify-center p-2 bg-gray-100 text-gray-400 hover:bg-sky-600 hover:text-white rounded-xl transition-all"
+                        className="inline-flex items-center justify-center w-10 h-10 bg-white text-slate-400 border border-slate-200 hover:border-sky-500 hover:text-sky-500 rounded-xl transition-all shadow-sm"
                       >
-                        <EyeIcon className="h-4 w-4" />
+                        <EyeIcon className="h-5 w-5" />
                       </Link>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="text-center py-16">
-                    <div className="flex flex-col items-center">
-                      <DocumentTextIcon className="h-12 w-12 text-gray-100 mb-4" />
-                      <p className="text-gray-300 font-bold italic">Belum ada aktivitas finansial</p>
-                    </div>
+                  <td colSpan={7} className="text-center py-24">
+                    <p className="text-slate-300 font-black italic text-lg">Hening... Belum ada transaksi masuk.</p>
                   </td>
                 </tr>
               )}
@@ -763,54 +596,54 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ========== ACTION RADAR (QUICK ACTIONS) ========== */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+      {/* ========== PREMIUM QUICK ACTIONS ========== */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
         <Link
           to="/admin/pos"
-          className="group relative overflow-hidden bg-emerald-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-100/50 hover:-translate-y-2 transition-all duration-300"
+          className="group relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl shadow-slate-200 hover:-translate-y-2 transition-all duration-500"
         >
           <div className="relative z-10">
-            <ShoppingCartIcon className="h-10 w-10 mb-4 opacity-80 group-hover:scale-110 transition-transform" />
-            <p className="font-black text-lg tracking-tight">KASIR POS</p>
-            <p className="text-emerald-100 text-xs font-bold opacity-80 mt-1 uppercase tracking-widest">Buka Transaksi</p>
+            <ShoppingCartIcon className="h-12 w-12 mb-6 text-emerald-400 group-hover:scale-110 transition-transform duration-500" />
+            <p className="font-black text-xl tracking-tight uppercase">Kasir Pintar</p>
+            <p className="text-slate-400 text-xs font-bold mt-1 tracking-widest uppercase">POS System</p>
           </div>
-          <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-bl-full translate-x-4 -translate-y-4"></div>
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl"></div>
         </Link>
 
         <Link
           to="/admin/products"
-          className="group relative overflow-hidden bg-sky-600 rounded-3xl p-6 text-white shadow-lg shadow-sky-100/50 hover:-translate-y-2 transition-all duration-300"
+          className="group relative overflow-hidden bg-white border border-slate-100 rounded-[2rem] p-8 text-slate-900 shadow-xl shadow-slate-100 hover:-translate-y-2 transition-all duration-500"
         >
           <div className="relative z-10">
-            <PlusIcon className="h-10 w-10 mb-4 opacity-80 group-hover:scale-110 transition-transform" />
-            <p className="font-black text-lg tracking-tight">PRODUK</p>
-            <p className="text-sky-100 text-xs font-bold opacity-80 mt-1 uppercase tracking-widest">Kelola Barang</p>
+            <PlusIcon className="h-12 w-12 mb-6 text-sky-500 group-hover:scale-110 transition-transform duration-500" />
+            <p className="font-black text-xl tracking-tight uppercase">Kelola Produk</p>
+            <p className="text-slate-400 text-xs font-bold mt-1 tracking-widest uppercase">Katalog & Stok</p>
           </div>
-          <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-bl-full translate-x-4 -translate-y-4"></div>
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl"></div>
         </Link>
 
         <Link
           to="/admin/inventory"
-          className="group relative overflow-hidden bg-indigo-600 rounded-3xl p-6 text-white shadow-lg shadow-indigo-100/50 hover:-translate-y-2 transition-all duration-300"
+          className="group relative overflow-hidden bg-white border border-slate-100 rounded-[2rem] p-8 text-slate-900 shadow-xl shadow-slate-100 hover:-translate-y-2 transition-all duration-500"
         >
           <div className="relative z-10">
-            <CubeIcon className="h-10 w-10 mb-4 opacity-80 group-hover:scale-110 transition-transform" />
-            <p className="font-black text-lg tracking-tight">INVENTORY</p>
-            <p className="text-indigo-100 text-xs font-bold opacity-80 mt-1 uppercase tracking-widest">Update Suplai</p>
+            <CubeIcon className="h-12 w-12 mb-6 text-indigo-500 group-hover:scale-110 transition-transform duration-500" />
+            <p className="font-black text-xl tracking-tight uppercase">Inventory</p>
+            <p className="text-slate-400 text-xs font-bold mt-1 tracking-widest uppercase">Batch & Gudang</p>
           </div>
-          <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-bl-full translate-x-4 -translate-y-4"></div>
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
         </Link>
 
         <Link
           to="/admin/reports"
-          className="group relative overflow-hidden bg-amber-600 rounded-3xl p-6 text-white shadow-lg shadow-amber-100/50 hover:-translate-y-2 transition-all duration-300"
+          className="group relative overflow-hidden bg-white border border-slate-100 rounded-[2rem] p-8 text-slate-900 shadow-xl shadow-slate-100 hover:-translate-y-2 transition-all duration-500"
         >
           <div className="relative z-10">
-            <DocumentTextIcon className="h-10 w-10 mb-4 opacity-80 group-hover:scale-110 transition-transform" />
-            <p className="font-black text-lg tracking-tight">LAPORAN</p>
-            <p className="text-amber-100 text-xs font-bold opacity-80 mt-1 uppercase tracking-widest">Analisis Toko</p>
+            <DocumentTextIcon className="h-12 w-12 mb-6 text-amber-500 group-hover:scale-110 transition-transform duration-500" />
+            <p className="font-black text-xl tracking-tight uppercase">Analitik</p>
+            <p className="text-slate-400 text-xs font-bold mt-1 tracking-widest uppercase">Laporan Bisnis</p>
           </div>
-          <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-bl-full translate-x-4 -translate-y-4"></div>
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl"></div>
         </Link>
       </div>
     </div>

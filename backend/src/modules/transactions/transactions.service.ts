@@ -15,7 +15,6 @@ import { Inventory } from '../inventory/entities/inventory.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { AddToCartDto } from './dto/add-to-cart.dto';
-import { subDays } from 'date-fns';
 import { Customer } from '../customers/entities/customer.entity';
 
 // Interface untuk alokasi stok
@@ -273,13 +272,16 @@ export class TransactionsService {
     return reservations;
   }
 
-  async getWeeklySales() {
-    const endDate = new Date();
-    const startDate = subDays(endDate, 7);
+  async getWeeklySales(startDate?: Date, endDate?: Date) {
+    if (!endDate) endDate = new Date();
+    if (!startDate) {
+      startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 7);
+    }
 
     const sales = await this.transactionRepository
       .createQueryBuilder('transaction')
-      .select('DATE(transaction.created_at)', 'date') // Use created_at
+      .select('DATE(transaction.created_at)', 'date')
       .addSelect('SUM(transaction.total)', 'total')
       .where('transaction.created_at BETWEEN :start AND :end', { start: startDate, end: endDate })
       .andWhere('transaction.status = :status', { status: TransactionStatus.COMPLETED })
@@ -287,10 +289,13 @@ export class TransactionsService {
       .orderBy('date', 'ASC')
       .getRawMany<{ date: string; total: string }>();
 
-    // Generate last 7 days
+    // Generate days within range
     const result: { date: string; total: number }[] = [];
-    for (let i = 0; i < 7; i++) {
-      const date = subDays(endDate, 6 - i);
+    const diffDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    for (let i = 0; i <= diffDays; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
       const sale = sales.find((s) => s.date === dateStr);
       result.push({
@@ -302,22 +307,25 @@ export class TransactionsService {
     return result;
   }
 
-  async getMonthlySales() {
-    const endDate = new Date();
-    const startDate = subDays(endDate, 30); // Last 30 days
+  async getMonthlySales(startDate?: Date, endDate?: Date) {
+    if (!endDate) endDate = new Date();
+    if (!startDate) {
+      startDate = new Date(endDate);
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
 
-    // Group by day for the last 30 days
+    // Group by month/year
     const results = await this.transactionRepository.query<MonthlySalesResult[]>(
-      `SELECT DATE(created_at) as date, SUM(total) as total 
+      `SELECT DATE_FORMAT(created_at, '%Y-%m') as date, SUM(total) as total 
        FROM transactions 
-       WHERE created_at >= ? AND status = ?
-       GROUP BY DATE(created_at)
+       WHERE created_at BETWEEN ? AND ? AND status = ?
+       GROUP BY DATE_FORMAT(created_at, '%Y-%m')
        ORDER BY date ASC`,
-      [startDate, TransactionStatus.COMPLETED],
+      [startDate, endDate, TransactionStatus.COMPLETED],
     );
 
     return results.map((item) => ({
-      date: item.date,
+      month: item.date,
       total: parseFloat(item.total) || 0,
     }));
   }
@@ -356,17 +364,32 @@ export class TransactionsService {
     }));
   }
 
-  async getPaymentMethods() {
-    const methods = await this.transactionRepository
+  async getPaymentMethods(startDate?: Date, endDate?: Date) {
+    const query = this.transactionRepository
       .createQueryBuilder('transaction')
       .select('transaction.paymentMethod', 'method')
       .addSelect('COUNT(transaction.id)', 'count')
       .addSelect('SUM(transaction.total)', 'total')
-      .where('transaction.status = :status', { status: TransactionStatus.COMPLETED })
+      .where('transaction.status = :status', { status: TransactionStatus.COMPLETED });
+
+    if (startDate) {
+      query.andWhere('transaction.createdAt >= :startDate', { startDate });
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.andWhere('transaction.createdAt <= :endDate', { endDate: end });
+    }
+
+    const methods = await query
       .groupBy('transaction.paymentMethod')
       .getRawMany<{ method: string; count: string; total: string }>();
 
-    return methods;
+    return methods.map((m) => ({
+      method: m.method,
+      count: parseInt(m.count) || 0,
+      total: parseFloat(m.total) || 0,
+    }));
   }
 
   // Buat transaksi baru (HANYA RESERVASI, TIDAK KURANGI STOK)

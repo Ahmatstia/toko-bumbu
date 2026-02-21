@@ -42,15 +42,24 @@ export class TransactionsController {
   @Get('weekly')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async getWeeklySales() {
-    return this.transactionsService.getWeeklySales();
+  async getWeeklySales(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.transactionsService.getWeeklySales(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
   }
 
   @Get('monthly')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async getMonthlySales() {
-    return this.transactionsService.getMonthlySales();
+  async getMonthlySales(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.transactionsService.getMonthlySales(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
   }
 
   @Get('daily')
@@ -66,8 +75,14 @@ export class TransactionsController {
   @Get('payment-methods')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER, UserRole.MANAGER, UserRole.CASHIER)
-  async getPaymentMethods() {
-    return this.transactionsService.getPaymentMethods();
+  async getPaymentMethods(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.transactionsService.getPaymentMethods(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
   }
 
   @Get('today')
