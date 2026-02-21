@@ -5,9 +5,11 @@ import {
   MagnifyingGlassIcon,
   FunnelIcon,
   UserIcon,
-  PhoneIcon,
-  CalendarIcon,
   ArrowPathIcon,
+  PencilIcon,
+  TrashIcon,
+  PowerIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import { formatPrice } from "../../utils/format";
@@ -46,6 +48,9 @@ const Customers: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [totalData, setTotalData] = useState(0);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastCustomerRef = useCallback(
@@ -127,6 +132,41 @@ const Customers: React.FC = () => {
     setIsLoadingMore(true);
     setPage((prev) => prev + 1);
   }, [isLoadingMore, hasMore, page]);
+
+  const handleToggleStatus = async (id: string) => {
+    try {
+      await api.patch(`/customers/${id}/toggle-status`);
+      const toast = (await import("react-hot-toast")).default;
+      toast.success("Status customer berhasil diubah");
+      refetch();
+    } catch (err) {
+      console.error(err);
+      const toast = (await import("react-hot-toast")).default;
+      toast.error("Gagal mengubah status customer");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus customer ini?"))
+      return;
+    try {
+      await api.delete(`/customers/${id}`);
+      const toast = (await import("react-hot-toast")).default;
+      toast.success("Customer berhasil dihapus");
+      refetch();
+    } catch (err: any) {
+      console.error(err);
+      const toast = (await import("react-hot-toast")).default;
+      toast.error(
+        err.response?.data?.message || "Gagal menghapus customer",
+      );
+    }
+  };
+
+  const handleEdit = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setIsEditModalOpen(true);
+  };
 
   const isLoading = initialLoading && page === 1 && allCustomers.length === 0;
 
@@ -249,6 +289,9 @@ const Customers: React.FC = () => {
                 <th className="text-left py-3 px-6 text-sm font-semibold text-gray-600">
                   Status
                 </th>
+                <th className="text-center py-3 px-6 text-sm font-semibold text-gray-600">
+                  Aksi
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -310,6 +353,35 @@ const Customers: React.FC = () => {
                           {customer.isActive ? "Aktif" : "Non-aktif"}
                         </span>
                       </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleEdit(customer)}
+                            className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleStatus(customer.id)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              customer.isActive
+                                ? "text-amber-600 hover:bg-amber-50"
+                                : "text-green-600 hover:bg-green-50"
+                            }`}
+                            title={customer.isActive ? "Non-aktifkan" : "Aktifkan"}
+                          >
+                            <PowerIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(customer.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Hapus"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -336,6 +408,107 @@ const Customers: React.FC = () => {
             </div>
           )}
       </div>
+
+      {/* Edit Customer Modal */}
+      {isEditModalOpen && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-bold text-gray-900">Edit Customer</h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-6 w-6 text-gray-500" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!selectedCustomer) return;
+                setIsSubmitting(true);
+                const formData = new FormData(e.currentTarget);
+                const updateData = {
+                  name: formData.get("name"),
+                  email: formData.get("email"),
+                  phone: formData.get("phone"),
+                };
+
+                try {
+                  await api.patch(`/customers/${selectedCustomer.id}`, updateData);
+                  const toast = (await import("react-hot-toast")).default;
+                  toast.success("Data customer berhasil diperbarui");
+                  setIsEditModalOpen(false);
+                  refetch();
+                } catch (err: any) {
+                  console.error(err);
+                  const toast = (await import("react-hot-toast")).default;
+                  toast.error(err.response?.data?.message || "Gagal memperbarui data");
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nama Lengkap
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  defaultValue={selectedCustomer.name}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  defaultValue={selectedCustomer.email}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nomor HP
+                </label>
+                <input
+                  type="text"
+                  name="phone"
+                  defaultValue={selectedCustomer.phone}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

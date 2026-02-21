@@ -29,6 +29,7 @@ export class CustomersService {
     Object.assign(customer, updateDto);
     await this.customerRepository.save(customer);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = customer;
     return result;
   }
@@ -127,7 +128,16 @@ export class CustomersService {
       skip: (page - 1) * limit,
       take: limit,
       order: { createdAt: 'DESC' },
-      select: ['id', 'name', 'email', 'phone', 'totalTransactions', 'totalSpent', 'createdAt'], // Jangan include password
+      select: [
+        'id',
+        'name',
+        'email',
+        'phone',
+        'totalTransactions',
+        'totalSpent',
+        'createdAt',
+        'isActive',
+      ],
     });
 
     return {
@@ -178,5 +188,32 @@ export class CustomersService {
     }
 
     return customer;
+  }
+
+  async update(id: string, updateDto: any) {
+    const customer = await this.findOne(id);
+    Object.assign(customer, updateDto);
+    return this.customerRepository.save(customer);
+  }
+
+  async toggleStatus(id: string) {
+    const customer = await this.findOne(id);
+    customer.isActive = !customer.isActive;
+    return this.customerRepository.save(customer);
+  }
+
+  async remove(id: string) {
+    const customer = await this.customerRepository.findOne({
+      where: { id },
+      relations: ['transactions'],
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    // Secara profesional, kita tidak benar-benar menghapus data jika ada history
+    // Tapi dengan Soft Delete, data tetap ada di DB namun tidak muncul di UI.
+    return this.customerRepository.softRemove(customer);
   }
 }

@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  DeleteDateColumn,
 } from 'typeorm';
 import { CustomerAddress } from './customer-address.entity';
 import { Transaction } from '../../transactions/entities/transaction.entity';
@@ -66,6 +67,9 @@ export class Customer {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at' })
+  deletedAt: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
