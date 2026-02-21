@@ -204,7 +204,7 @@ export class InventoryService {
             batchCode: stock.batchCode || undefined,
             notes: `Auto expired - ${today.toISOString().split('T')[0]}`,
           },
-          'system',
+          undefined, // Gunakan undefined agar tidak melanggar foreign key ke tabel users
         );
 
         results.push(result as ExpiredResult);
@@ -255,22 +255,35 @@ export class InventoryService {
     const expiryThreshold = new Date();
     expiryThreshold.setDate(expiryThreshold.getDate() + days);
 
+    // Grouping stok berdasarkan produk untuk statistik akurat (Lancar, Menipis, Habis)
+    const productTotals = new Map<string, { total: number; minStock: number }>();
+    allStocksForStats.forEach((s) => {
+      const pId = s.productId;
+      if (!productTotals.has(pId)) {
+        productTotals.set(pId, { total: 0, minStock: s.product?.minStock ?? 0 });
+      }
+      productTotals.get(pId)!.total += s.quantity;
+    });
+
+    const productValues = Array.from(productTotals.values());
+
     const stats = {
-      safe: allStocksForStats.filter((s) => s.quantity > (s.product?.minStock ?? 0)).length,
-      low: allStocksForStats.filter(
-        (s) => s.quantity > 0 && s.quantity <= (s.product?.minStock ?? 0),
-      ).length,
-      out: allStocksForStats.filter((s) => s.quantity === 0).length,
-      // Sudah melewati tanggal kadaluarsa dan masih ada stoknya
+      // Lancar: Total stok produk > minStock
+      safe: productValues.filter((pv) => pv.total > pv.minStock).length,
+      // Menipis: Total stok produk > 0 DAN <= minStock
+      low: productValues.filter((pv) => pv.total > 0 && pv.total <= pv.minStock).length,
+      // Habis: Total stok produk === 0
+      out: productValues.filter((pv) => pv.total === 0).length,
+      // Sudah melewati tanggal kadaluarsa dan masih ada stoknya (tetap hitung per batch)
       expired: allStocksForStats.filter((s) => {
         if (!s.expiryDate || s.quantity === 0) return false;
-        return new Date(s.expiryDate) < now; // sudah lewat hari ini
+        return new Date(s.expiryDate) < now;
       }).length,
-      // Akan expired dalam X hari ke depan (belum expired)
+      // Akan expired dalam X hari ke depan (tetap hitung per batch)
       expiring: allStocksForStats.filter((s) => {
         if (!s.expiryDate || s.quantity === 0) return false;
         const expiry = new Date(s.expiryDate);
-        return expiry >= now && expiry <= expiryThreshold; // belum expired tapi mau expired
+        return expiry >= now && expiry <= expiryThreshold;
       }).length,
     };
 
