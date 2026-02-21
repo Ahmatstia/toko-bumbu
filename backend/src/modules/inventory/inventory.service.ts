@@ -165,14 +165,15 @@ export class InventoryService {
 
   // CEK DAN PROSES STOK EXPIRED - FIXED
   async checkExpiredProducts() {
+    // Gunakan tanggal awal hari ini untuk perbandingan yang akurat
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0); // Jam 00:00:00 hari ini
 
-    console.log('🔍 Mencari stok expired sebelum:', today.toISOString());
+    console.log('🔍 Mencari stok expired hingga:', today.toISOString());
 
     const expiredStocks = await this.stockRepository.find({
       where: {
-        expiryDate: LessThan(today),
+        expiryDate: LessThan(today), // expiryDate < 00:00:00 hari ini = sudah lewat
         quantity: MoreThan(0),
       },
       relations: ['product'],
@@ -195,7 +196,6 @@ export class InventoryService {
       try {
         console.log(`⚙️ Memproses expired: ${stock.product?.name} - ${stock.quantity} unit`);
 
-        // FIX: Tambahkan userId 'system' untuk identifikasi
         const result = await this.addStock(
           {
             productId: stock.productId,
@@ -204,7 +204,7 @@ export class InventoryService {
             batchCode: stock.batchCode || undefined,
             notes: `Auto expired - ${today.toISOString().split('T')[0]}`,
           },
-          'system', // <-- TAMBAHKAN USER ID
+          'system',
         );
 
         results.push(result as ExpiredResult);
@@ -300,6 +300,8 @@ export class InventoryService {
 
     if (isGrouped) {
       const groupedMap = new Map<string, GroupedStock>();
+      const now = new Date();
+      now.setHours(0, 0, 0, 0); // Awal hari ini untuk perbandingan yang akurat
 
       stocks.forEach((s) => {
         if (!s.product) return;
@@ -321,8 +323,13 @@ export class InventoryService {
         }
 
         const group = groupedMap.get(pId)!;
-        group.totalQuantity += s.quantity;
         group.batches.push(s);
+
+        // Hanya hitung totalQuantity dari batch yang belum expired
+        const isExpired = s.expiryDate && new Date(s.expiryDate) < now;
+        if (!isExpired) {
+          group.totalQuantity += s.quantity;
+        }
 
         if (s.sellingPrice) {
           group.minSellingPrice = group.minSellingPrice === 0 ? s.sellingPrice : Math.min(group.minSellingPrice, s.sellingPrice);
@@ -346,7 +353,13 @@ export class InventoryService {
       };
     }
 
-    const totalStock = stocks.reduce((sum, s) => sum + s.quantity, 0);
+    // Untuk non-grouped: hitung total hanya dari stok yang belum expired
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const totalStock = stocks.reduce((sum, s) => {
+      const isExpired = s.expiryDate && new Date(s.expiryDate) < now;
+      return sum + (isExpired ? 0 : s.quantity);
+    }, 0);
 
     return {
       stocks,

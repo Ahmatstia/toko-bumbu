@@ -106,6 +106,7 @@ export class TransactionsService {
         .createQueryBuilder('stock')
         .where('stock.productId = :productId', { productId: item.productId })
         .andWhere('stock.quantity > 0')
+        .andWhere('(stock.expiryDate IS NULL OR stock.expiryDate > CURRENT_DATE())') // Filter expired
         .orderBy('stock.expiryDate', 'ASC')
         .addOrderBy('stock.createdAt', 'ASC');
 
@@ -541,7 +542,7 @@ export class TransactionsService {
       console.log(`Found ${reservations.length} reservations`);
 
       if (reservations.length === 0) {
-        throw new Error('Tidak ada reservasi aktif ditemukan untuk transaksi ini');
+        throw new BadRequestException('Tidak ada reservasi aktif ditemukan untuk transaksi ini. Mungkin pesanan sudah kadaluarsa atau dibatalkan.');
       }
 
       // 3. KURANGI STOK dan UPDATE RESERVASI untuk setiap item
@@ -550,7 +551,7 @@ export class TransactionsService {
 
         // Validasi stock_quantity
         if (res.stock_quantity === undefined || res.stock_quantity === null) {
-          throw new Error(`Stock quantity not found for stock ID: ${res.stock_id}`);
+          throw new BadRequestException(`Data stok tidak valid untuk produk: ${res.product_name}`);
         }
 
         // Update stok - kurangi quantity
@@ -563,7 +564,7 @@ export class TransactionsService {
         const affectedRows = updateResult.affectedRows || updateResult[0]?.affectedRows || 0;
 
         if (affectedRows === 0) {
-          throw new Error(`Gagal mengurangi stok ${res.stock_id}. Stok mungkin tidak cukup.`);
+          throw new BadRequestException(`Gagal mengurangi stok ${res.product_name}. Stok di batch ini mungkin tidak cukup.`);
         }
 
         // Update status reservasi menjadi CONFIRMED
@@ -628,7 +629,7 @@ export class TransactionsService {
 
     const transaction = await this.findOne(transactionId);
 
-    if (![TransactionStatus.PENDING, TransactionStatus.PROCESSING].includes(transaction.status)) {
+    if (![TransactionStatus.PENDING, TransactionStatus.PROCESSING, TransactionStatus.COMPLETED].includes(transaction.status)) {
       throw new BadRequestException('Transaksi tidak dapat dibatalkan');
     }
 
@@ -637,16 +638,70 @@ export class TransactionsService {
     await queryRunner.startTransaction();
 
     try {
-      // Update status reservasi
-      const updateResult = await queryRunner.manager
-        .createQueryBuilder()
-        .update(Reservation)
-        .set({ status: ReservationStatus.CANCELLED })
-        .where('transactionId = :transactionId', { transactionId })
-        .andWhere('status = :status', { status: ReservationStatus.ACTIVE })
-        .execute();
+      // Jika transaksi sudah COMPLETED, kita harus mengembalikan stok secara eksplisit
+      if (transaction.status === TransactionStatus.COMPLETED) {
+        console.log('Returning stock for COMPLETED transaction...');
+        
+        // Ambil items dengan detail stok
+        const items = await queryRunner.manager.find(TransactionItem, {
+          where: { transactionId: transaction.id },
+          relations: ['product'],
+        });
 
-      console.log(`Reservations cancelled: ${updateResult.affected}`);
+        for (const item of items) {
+          if (item.stockId) {
+            // Update quantity di tabel stocks
+            await queryRunner.manager.query(
+              `UPDATE stocks SET quantity = quantity + ? WHERE id = ?`,
+              [item.quantity, item.stockId]
+            );
+
+            // Ambil info stok terbaru untuk log inventory
+            const currentStock = await queryRunner.manager.query(
+              `SELECT * FROM stocks WHERE id = ?`,
+              [item.stockId]
+            );
+
+            const stock = currentStock[0];
+
+            // Catat ke log inventory (sebagai barang masuk / koreksi)
+            const inventoryId = require('uuid').v4();
+            await queryRunner.manager.query(
+              `INSERT INTO inventory (
+                id, product_id, type, quantity, stock_before, stock_after, 
+                batch_code, expiry_date, purchase_price, selling_price, 
+                user_id, notes, reference_id, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+              [
+                inventoryId,
+                item.productId,
+                'IN', // Koreksi masuk
+                item.quantity,
+                stock.quantity - item.quantity,
+                stock.quantity,
+                stock.batch_code,
+                stock.expiry_date,
+                stock.purchase_price,
+                stock.selling_price,
+                null, // Untuk saat ini null, atau bisa dioper dari controller
+                `VOID Transaksi ${transaction.invoiceNumber}`,
+                transaction.id,
+              ]
+            );
+          }
+        }
+      } else {
+        // Jika PENDING/PROCESSING, batalkan reservasi (karena stok belum benar-benar keluar)
+        const updateResult = await queryRunner.manager
+          .createQueryBuilder()
+          .update(Reservation)
+          .set({ status: ReservationStatus.CANCELLED })
+          .where('transactionId = :transactionId', { transactionId })
+          .andWhere('status = :status', { status: ReservationStatus.ACTIVE })
+          .execute();
+
+        console.log(`Reservations cancelled: ${updateResult.affected}`);
+      }
 
       // Update status transaksi
       transaction.status = TransactionStatus.CANCELLED;

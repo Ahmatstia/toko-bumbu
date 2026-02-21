@@ -19,6 +19,8 @@ import {
 } from "@heroicons/react/24/outline";
 import { formatPrice } from "../../utils/format";
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
+
 const Pos: React.FC = () => {
   const {
     categories,
@@ -245,9 +247,15 @@ const Pos: React.FC = () => {
                       className="group flex flex-col bg-white rounded-2xl p-2 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary-200 transition-all text-left relative overflow-hidden disabled:opacity-50"
                     >
                       <div className="aspect-square rounded-xl overflow-hidden mb-2 relative">
-                        {product.imageUrl ? (
+                        {product.imageUrl || (product.images && product.images.length > 0) ? (
                           <img
-                            src={product.imageUrl}
+                            src={
+                              product.imageUrl 
+                                ? (product.imageUrl.startsWith("http") ? product.imageUrl : `${API_URL}${product.imageUrl}`)
+                                : (product.images?.[0]?.url?.startsWith("http") 
+                                    ? product.images?.[0]?.url 
+                                    : `${API_URL}${product.images?.[0]?.url || ""}`)
+                            }
                             alt={product.name}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform"
                           />

@@ -23,6 +23,7 @@ export interface Product {
   price: number;
   stockQuantity: number;
   imageUrl?: string;
+  images?: { url: string }[];
   categoryId: string;
   category: { id: string; name: string };
   unit: string;

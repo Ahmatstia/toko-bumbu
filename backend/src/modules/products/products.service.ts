@@ -73,6 +73,7 @@ export class ProductsService {
       .addSelect('MAX(stock.sellingPrice)', 'price')
       .where('stock.productId IN (:...productIds)', { productIds })
       .andWhere('stock.isActive = :isActive', { isActive: true })
+      .andWhere('(stock.expiryDate IS NULL OR stock.expiryDate > CURRENT_DATE())') // Filter expired
       .groupBy('stock.productId')
       .getRawMany<{ productId: string; totalStock: string; price: string }>();
 
@@ -211,6 +212,7 @@ export class ProductsService {
         .addSelect('SUM(stock.quantity)', 'totalStock')
         .addSelect('MAX(stock.sellingPrice)', 'price')
         .where('stock.productId IN (:...productIds)', { productIds })
+        .andWhere('(stock.expiryDate IS NULL OR stock.expiryDate > CURRENT_DATE())') // Filter expired
         .groupBy('stock.productId')
         .getRawMany<{ productId: string; totalStock: string; price: string }>();
 

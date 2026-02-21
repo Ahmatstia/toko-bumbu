@@ -653,27 +653,27 @@ Silakan konfirmasi pembayaran Anda dengan membalas chat ini.`;
                   <div className="flex flex-wrap gap-3">
                     {/* Status Logic Handling */}
                     {(selectedTransaction.status === "PENDING" || selectedTransaction.status === "PROCESSING") && (
-                      <>
-                        <button
-                          onClick={() => confirmPaymentMutation.mutate(selectedTransaction.id)}
-                          disabled={confirmPaymentMutation.isPending}
-                          className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2 group disabled:opacity-50"
-                        >
-                          <CheckCircleIcon className="h-5 w-5 group-hover:scale-110 transition-transform" />
-                          {confirmPaymentMutation.isPending ? "Mengkonfirmasi..." : "Konfirmasi & Kurangi Stok"}
-                        </button>
+                      <button
+                        onClick={() => confirmPaymentMutation.mutate(selectedTransaction.id)}
+                        disabled={confirmPaymentMutation.isPending}
+                        className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2 group disabled:opacity-50"
+                      >
+                        <CheckCircleIcon className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                        {confirmPaymentMutation.isPending ? "Mengkonfirmasi..." : "Konfirmasi & Kurangi Stok"}
+                      </button>
+                    )}
 
-                        <button
-                          onClick={() => {
-                            setCancelReason("");
-                            setShowCancelModal(true);
-                          }}
-                          className="px-6 py-3 bg-white text-rose-600 border-2 border-rose-100 rounded-2xl font-black text-sm hover:bg-rose-50 transition-all flex items-center gap-2"
-                        >
-                          <XCircleIcon className="h-5 w-5" />
-                          Batalkan Pesanan
-                        </button>
-                      </>
+                    {(selectedTransaction.status === "PENDING" || selectedTransaction.status === "PROCESSING" || selectedTransaction.status === "COMPLETED") && (
+                      <button
+                        onClick={() => {
+                          setCancelReason("");
+                          setShowCancelModal(true);
+                        }}
+                        className="px-6 py-3 bg-white text-rose-600 border-2 border-rose-100 rounded-2xl font-black text-sm hover:bg-rose-50 transition-all flex items-center gap-2"
+                      >
+                        <XCircleIcon className="h-5 w-5" />
+                        {selectedTransaction.status === "COMPLETED" ? "Batalkan (Void)" : "Batalkan Pesanan"}
+                      </button>
                     )}
                   </div>
                   

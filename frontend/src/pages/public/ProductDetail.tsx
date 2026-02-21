@@ -97,11 +97,20 @@ const ProductDetail: React.FC = () => {
   });
 
   const stocks: Stock[] = stockData?.stocks || [];
-  const totalStock = stocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
+
+  // Hanya hitung stok dari batch yang belum expired
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const validStocks = stocks.filter((s) => {
+    if (!s.expiryDate) return true; // batch tanpa kadaluarsa = valid
+    return new Date(s.expiryDate) >= today; // belum expired
+  });
+
+  const totalStock = validStocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
   const availableStock = totalStock;
 
-  // Ambil harga dari stock pertama
-  const productPrice = stocks.length > 0 ? Number(stocks[0].sellingPrice) : 0;
+  // Ambil harga dari stock valid pertama (bukan dari expired batch)
+  const productPrice = validStocks.length > 0 ? Number(validStocks[0].sellingPrice) : 0;
 
   // Kumpulkan semua gambar dari images[] atau fallback ke imageUrl
   const allImages: string[] = React.useMemo(() => {

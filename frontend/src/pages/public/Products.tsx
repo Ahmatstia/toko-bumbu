@@ -119,7 +119,6 @@ const Products: React.FC = () => {
     },
   });
 
-  // ========== FUNGSI FETCH STOCK UNTUK PRODUK ==========
   const fetchStockForProducts = async (
     products: Product[],
   ): Promise<ProductWithPrice[]> => {
@@ -131,12 +130,19 @@ const Products: React.FC = () => {
           );
           const stockData = stockResponse.data;
 
-          const totalStock =
-            stockData.stocks?.reduce(
-              (sum: number, s: any) => sum + (s.quantity || 0),
-              0,
-            ) || 0;
-          const price = stockData.stocks?.[0]?.sellingPrice || 0;
+          // Hanya hitung stok dari batch yang belum expired
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const validStocks = (stockData.stocks || []).filter((s: any) => {
+            if (!s.expiryDate) return true; // batch tanpa kadaluarsa = valid
+            return new Date(s.expiryDate) >= today; // batch belum kadaluarsa
+          });
+
+          const totalStock = validStocks.reduce(
+            (sum: number, s: any) => sum + (s.quantity || 0),
+            0,
+          ) || 0;
+          const price = validStocks[0]?.sellingPrice || stockData.stocks?.[0]?.sellingPrice || 0;
 
           return {
             ...product,
