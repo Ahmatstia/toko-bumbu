@@ -319,7 +319,7 @@ export class TransactionsService {
     console.log('=== CREATE TRANSACTION START ===');
     console.log('DTO:', JSON.stringify(createTransactionDto, null, 2));
 
-    const {
+      const {
       items,
       customerName,
       customerPhone,
@@ -331,6 +331,19 @@ export class TransactionsService {
       notes,
       orderType = 'OFFLINE', // Default OFFLINE untuk kasir
     } = createTransactionDto;
+
+    // ========== VALIDASI CUSTOMER (Jika Ada) ==========
+    if (customerId) {
+      const customer = await this.customerRepository.findOne({
+        where: { id: customerId },
+      });
+      if (!customer) {
+        throw new NotFoundException('Customer tidak ditemukan');
+      }
+      if (!customer.isActive) {
+        throw new BadRequestException('Akun customer ini sedang dinonaktifkan.');
+      }
+    }
 
     // ========== ANTI-SPAM CHECK (ONLINE ORDERS) ==========
     if (orderType === 'ONLINE' && customerPhone) {
@@ -453,10 +466,18 @@ export class TransactionsService {
         for (const item of validatedItems) {
           for (const allocation of item.allocations) {
             // Kurangi stok menggunakan atomic update
-            await queryRunner.manager.query(
+            const updateResult = await queryRunner.manager.query(
               `UPDATE stocks SET quantity = quantity - ? WHERE id = ? AND quantity >= ?`,
               [allocation.quantity, allocation.stock.id, allocation.quantity],
             );
+
+            // Cek apakah update berhasil (stok mencukupi secara atomik)
+            const affectedRows = updateResult.affectedRows || updateResult[0]?.affectedRows || 0;
+            if (affectedRows === 0) {
+              throw new BadRequestException(
+                `Stok produk ${item.product.name} di batch ${allocation.stock.batchCode} tidak cukup atau sudah berubah.`,
+              );
+            }
 
             // Ambil data stok terbaru SESUDAH update untuk inventory log yang akurat
             const updatedStockResult = await queryRunner.manager.query(
@@ -467,7 +488,7 @@ export class TransactionsService {
             const stockBefore = stockAfter + allocation.quantity;
 
             // Catat ke inventory
-            const inventoryId = require('uuid').v4(); 
+            const inventoryId = uuidv4(); 
             await queryRunner.manager.query(
               `INSERT INTO inventory (
               id, product_id, type, quantity, stock_before, stock_after, 
@@ -583,8 +604,8 @@ export class TransactionsService {
           ['CONFIRMED', res.id],
         );
 
-        // Catat ke inventory - gunakan UUID() atau generate UUID di JavaScript
-        const inventoryId = require('uuid').v4(); // atau gunakan crypto.randomUUID()
+        // Catat ke inventory - gunakan uuidv4 dari import
+        const inventoryId = uuidv4();
 
         await queryRunner.manager.query(
           `INSERT INTO inventory (
@@ -678,7 +699,7 @@ export class TransactionsService {
             const stock = currentStock[0];
 
             // Catat ke log inventory (sebagai barang masuk / koreksi)
-            const inventoryId = require('uuid').v4();
+            const inventoryId = uuidv4();
             await queryRunner.manager.query(
               `INSERT INTO inventory (
                 id, product_id, type, quantity, stock_before, stock_after, 
@@ -1064,8 +1085,14 @@ export class TransactionsService {
         : `RETURNED: ${reason}`;
 
       await queryRunner.manager.save(transaction);
-      await queryRunner.commitTransaction();
-      return { message: 'Barang berhasil diretur, stok telah dikembalikan', transaction };
+    await queryRunner.commitTransaction();
+
+    // Update Customer Stats
+    if (transaction.customerId) {
+      await this.updateCustomerStats(transaction.customerId);
+    }
+
+    return { message: 'Barang berhasil diretur, stok telah dikembalikan', transaction };
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
