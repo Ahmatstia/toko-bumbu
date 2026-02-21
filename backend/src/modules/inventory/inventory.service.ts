@@ -249,16 +249,28 @@ export class InventoryService {
 
     const allStocksForStats = await statsQuery.getMany();
 
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
     const expiryThreshold = new Date();
     expiryThreshold.setDate(expiryThreshold.getDate() + days);
 
     const stats = {
-      safe: allStocksForStats.filter(s => s.quantity > (s.product?.minStock ?? 0)).length,
-      low: allStocksForStats.filter(s => s.quantity > 0 && s.quantity <= (s.product?.minStock ?? 0)).length,
-      out: allStocksForStats.filter(s => s.quantity === 0).length,
-      expiring: allStocksForStats.filter(s => {
+      safe: allStocksForStats.filter((s) => s.quantity > (s.product?.minStock ?? 0)).length,
+      low: allStocksForStats.filter(
+        (s) => s.quantity > 0 && s.quantity <= (s.product?.minStock ?? 0),
+      ).length,
+      out: allStocksForStats.filter((s) => s.quantity === 0).length,
+      // Sudah melewati tanggal kadaluarsa dan masih ada stoknya
+      expired: allStocksForStats.filter((s) => {
         if (!s.expiryDate || s.quantity === 0) return false;
-        return new Date(s.expiryDate) <= expiryThreshold;
+        return new Date(s.expiryDate) < now; // sudah lewat hari ini
+      }).length,
+      // Akan expired dalam X hari ke depan (belum expired)
+      expiring: allStocksForStats.filter((s) => {
+        if (!s.expiryDate || s.quantity === 0) return false;
+        const expiry = new Date(s.expiryDate);
+        return expiry >= now && expiry <= expiryThreshold; // belum expired tapi mau expired
       }).length,
     };
 
@@ -300,8 +312,6 @@ export class InventoryService {
 
     if (isGrouped) {
       const groupedMap = new Map<string, GroupedStock>();
-      const now = new Date();
-      now.setHours(0, 0, 0, 0); // Awal hari ini untuk perbandingan yang akurat
 
       stocks.forEach((s) => {
         if (!s.product) return;
@@ -354,8 +364,6 @@ export class InventoryService {
     }
 
     // Untuk non-grouped: hitung total hanya dari stok yang belum expired
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
     const totalStock = stocks.reduce((sum, s) => {
       const isExpired = s.expiryDate && new Date(s.expiryDate) < now;
       return sum + (isExpired ? 0 : s.quantity);
